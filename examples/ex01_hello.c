@@ -1,0 +1,19 @@
+/** ex01_hello — 按钮/标签/复选框入门 */
+#include "fxtk.h"
+#include <stdio.h>
+static int s_n = 0;
+static void on_btn(fx_widget_t *w, void *ud) {
+    s_n++;
+    char b[32]; snprintf(b, sizeof(b), "已点击 %d 次", s_n);
+    fx_set_title(fx_find("lab"), b);
+}
+static void on_chk(fx_widget_t *w, void *ud) {
+    fx_set_bg(fx_get_value(w) ? FX_RGB(30, 30, 34) : FX_RGB(240, 240, 240));
+}
+void app_init(void) {
+    fx_set_bg(FX_RGB(240, 240, 240));
+    fx_label_new(percent("0.05,0.06", "0.95,0.18"), title("fxtk 示例 01 — Hello"), fgcolor(FX_RGB(40, 40, 40)));
+    fx_button_new(pixel("60,80", "200,120"), title("点我"), color(FX_RGB(33, 150, 243)), call(on_btn));
+    fx_label_new(pixel("60,140", "300,165"), name("lab"), title("已点击 0 次"), fgcolor(FX_RGB(40, 40, 40)));
+    fx_checkbox_new(pixel("60,180", "220,205"), title("深色背景"), fgcolor(FX_RGB(40, 40, 40)), call(on_chk));
+}
