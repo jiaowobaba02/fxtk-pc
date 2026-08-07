@@ -27,6 +27,7 @@ static fx_keyev_t g_kq[FX_KEYQUEUE]; static int g_kq_n = 0;
 static int sdl_key_read(fx_keyev_t *ev);
 static int g_wq[16]; static int g_wq_n = 0;
 static int sdl_wheel_read(int *x, int *y, int *dy);
+static void sdl_set_title(const char *s);
 static void sdl_clip_set(const char *s);
 static const char *sdl_clip_get(void);
 static int mouse_x = 0, mouse_y = 0;
@@ -182,7 +183,8 @@ fx_driver_t fx_sdl_driver = {
     .key_read = sdl_key_read,
     .clip_set = sdl_clip_set,
     .clip_get = sdl_clip_get,
-    .wheel_read = sdl_wheel_read
+    .wheel_read = sdl_wheel_read,
+    .set_title = sdl_set_title
 };
 
 int sdl_get_width(void)  { return s_width; }
@@ -217,3 +219,5 @@ static int sdl_wheel_read(int *x, int *y, int *dy)
     memmove(&g_wq[0], &g_wq[1], sizeof(int) * (size_t)(--g_wq_n));
     return 1;
 }
+
+static void sdl_set_title(const char *s) { if (window) SDL_SetWindowTitle(window, s); }
