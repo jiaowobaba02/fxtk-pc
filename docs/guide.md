@@ -55,6 +55,7 @@ cd linux_sim
 #include "fxtk.h"
 static void on_btn(fx_widget_t *w, void *ud) { fx_set_title(w, "clicked!"); }
 void app_init(void) {
+    fx_set_window_title("main");
     fx_set_bg(FX_RGB(240,240,240));
     fx_button_new(pixel("60,80","200,120"), title("OK"),
                   color(FX_RGB(33,150,243)), call(on_btn));
@@ -359,6 +360,6 @@ fx_scroll_content fx_set_image fx_image_set_zoom fx_parent fx_delete`
 系统：`fx_init fx_poll fx_width fx_height fx_set_bg fx_get_bg fx_repaint fx_repaint_rect
 fx_set_autorepaint fx_set_touch_debug`
 桌面：`fx_set_focus fx_get_focus fx_focus_blink fx_textedit_get fx_touch_state fx_pressed
-fx_last_key fx_wheel_take`
+fx_last_key fx_wheel_take fx_set_window_title`
 画布：见 §3。特效/图片：见 §7。
 
