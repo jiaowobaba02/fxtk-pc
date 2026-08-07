@@ -250,6 +250,7 @@ void app_init(void) {
     if (s_pics[2]) fx_image_tint(s_pics[2], FX_RGB(0, 200, 255), 90);
     fx_set_bg(FX_RGB(245, 245, 245));
     fx_set_touch_debug(1);
+	fx_set_window_title("demo v1.0");
     build_ui();
     fx_canvas_enable_buf(fx_find("wave_cv"));
     fx_canvas_enable_buf(fx_find("gfx_cv"));

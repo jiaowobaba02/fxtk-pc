@@ -11,9 +11,9 @@ gcc -O2 -g -pthread \
     fxtk_image_sdl.c \
     raymarch.c \
     gpu_raymarch.c \
-    app_desktop.c \
     main_linux.c \
     app.c \
+    app_desktop.c\
     -o fxtk_sim \
     -lSDL2 -lSDL2_ttf -lSDL2_image -lm -pthread -lEGL -lGLESv2 -lX11
 if [ $? -eq 0 ]; then

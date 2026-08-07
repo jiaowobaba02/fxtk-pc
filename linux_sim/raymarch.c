@@ -1,3 +1,6 @@
+#ifdef _WIN32
+#include <windows.h>
+#endif
 /**
  * raymarch.c — v5
  * 【v5】pthread 行级并行: N 核同时光追, 帧率 ≈ 单核 × N
@@ -176,7 +179,12 @@ void raymarch_render(uint16_t *px, int w, int h, float time, int max_steps)
     base.sr = 0.8f;
 
     /* 【v5 核心】按行切分, N 核并行 */
-    int n = (int)sysconf(_SC_NPROCESSORS_ONLN);
+    int n;
+#ifdef _WIN32
+    SYSTEM_INFO sysinfo; GetSystemInfo(&sysinfo); n = sysinfo.dwNumberOfProcessors;
+#else
+    n = (int)sysconf(_SC_NPROCESSORS_ONLN);
+#endif
     if (n < 1) n = 1;
     if (n > 8) n = 8;
     if (n > h) n = h;

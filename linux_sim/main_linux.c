@@ -1,7 +1,27 @@
+#ifdef _WIN32
+#define X11_SKIP_DUMMY
+typedef struct _Display Display;
+typedef unsigned long Window;
+typedef unsigned long Atom;
+typedef unsigned long XID;
+#define XOpenDisplay(name) ((Display*)0)
+#define XCloseDisplay(display)
+#define XInternAtom(display, name, only_if_exists) 0
+#define XChangeProperty(display, w, property, type, format, mode, data, nelements)
+#define XFlush(display)
+#define XSync(display, discard)
+#define XInitThreads()
+#define DefaultScreen(display) 0
+#define RootWindow(display, screen) 0
+#endif
+
+#ifndef _WIN32
+#include <X11/Xlib.h>
+#endif
 #include "fxtk.h"
 #include "esp_log.h"
 #include <SDL2/SDL.h>
-#include <X11/Xlib.h>
+
 
 extern fx_driver_t fx_sdl_driver;
 extern void sdl_update_screen(void);
@@ -16,6 +36,8 @@ int main(int argc, char *argv[]) {
     ESP_LOGI("SYS", "Starting fxtk PC Simulator Engine (Resizable)...");
     
     const char *font_paths[] = {
+        "C:/Windows/Fonts/msyh.ttc",
+        "C:/Windows/Fonts/simhei.ttf",
         "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",
         "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
