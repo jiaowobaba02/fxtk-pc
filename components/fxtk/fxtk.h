@@ -195,7 +195,9 @@ uint16_t fx_height(void);
 void fx_set_autorepaint(int on);
 void fx_set_touch_debug(int on);
 void fx_set_bg(fx_color_t c);
-void fx_set_window_title(const char *s);  /* 运行时改窗口标题 */
+void fx_set_window_title(const char *s);
+void fx_set_grid_lines(int on);   /* 调试: 显示网格线 */
+int fxtk_grid_lines_on(void);  /* 运行时改窗口标题 */
 
 extern fx_driver_t fx_st6201_driver;
 int  fx_gt911_init(void);

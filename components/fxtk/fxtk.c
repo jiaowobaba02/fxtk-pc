@@ -19,9 +19,10 @@ static fx_widget_t *s_parent = NULL;
 static int s_touch_prev = 0;
 static int s_last_tx = -1, s_last_ty = -1;
 static int s_repaint = 1;
+static int s_boot = 3;   /* 前3帧强制全屏, 杜绝偶发启动黑屏 */
 static int s_full = 0;
 static int s_autorepaint = 1;
-static fx_color_t s_bg = FX_RGB(240, 240, 240);
+static fx_color_t s_bg = FX_WHITE;
 #define FX_DIRTY_MAX 8
 static int s_dirty[FX_DIRTY_MAX][4];
 static int s_dirty_n = 0;
@@ -443,7 +444,8 @@ void fx_poll(void)
     s_tick++;
     int bl=(s_tick/25)&1;
     if (s_focus && s_focus->type==FX_W_TEXTEDIT && bl!=s_blink) { s_blink=bl; fx_repaint_rect(s_focus->x1,s_focus->y1,s_focus->x2,s_focus->y2); }
-    if (s_full) { s_full = 0; s_repaint = 0; s_dirty_n = 0;
+    if (s_boot > 0) { s_boot--; fx_frame_begin(); fxtk_draw_all(); fx_frame_end(); s_repaint = 0; s_dirty_n = 0; s_full = 0; }
+    else if (s_full) { s_full = 0; s_repaint = 0; s_dirty_n = 0;
 fx_frame_begin(); fxtk_draw_all(); fx_frame_end(); }
 else if (s_repaint && s_dirty_n > 0) {
         s_repaint=0; fx_frame_begin();
@@ -563,3 +565,7 @@ void fx_set_fgcolor(fx_widget_t *w,fx_color_t c){ if(!w)return; w->fg=c; fx_repa
 int fx_wheel_take(fx_widget_t *w) { if (s_wheel_tgt != w) return 0; int d = s_wheel_acc; s_wheel_acc = 0; return d; }
 
 void fx_set_window_title(const char *s) { if (s_drv && s_drv->set_title) s_drv->set_title(s); }
+
+static int s_grid_lines = 0;
+void fx_set_grid_lines(int on) { s_grid_lines = on; fx_repaint(); }
+int fxtk_grid_lines_on(void) { return s_grid_lines; }

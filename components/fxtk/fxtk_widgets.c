@@ -1,3 +1,4 @@
+#include <math.h>
 /**
  * fxtk_widgets.c — 控件绘制实现 (复选框居中+透明背景修复)
  */
@@ -13,23 +14,39 @@ static fx_color_t darken(fx_color_t c)
                         ((c & 31) / 2));
 }
 
+static fx_color_t btn_mix(fx_color_t a, fx_color_t b, int t)
+{   /* t: 0~256, b 的占比 */
+    int ar=(a>>11)&31, ag=(a>>5)&63, ab=a&31;
+    int br=(b>>11)&31, bg=(b>>5)&63, bb=b&31;
+    int r=(ar*(256-t)+br*t+128)>>8, g=(ag*(256-t)+bg*t+128)>>8, bl=(ab*(256-t)+bb*t+128)>>8;
+    return (fx_color_t)((r<<11)|(g<<5)|bl);
+}
 void fxtk_draw_button(fx_widget_t *w)
 {
-    int pressed = (w->flags & FX_F_PRESSED) != 0;
-    fx_color_t bg = pressed ? darken(w->bg) : w->bg;
-    fx_set_color(bg);
-    if (w->radius > 0) fx_fill_rect_round(w->x1, w->y1, w->x2, w->y2, w->radius);
-    else fx_fill_rect(w->x1, w->y1, w->x2, w->y2);
-    if (w->border > 0) {
-        fx_set_color(darken(bg));
-        if (w->radius > 0) fx_draw_rect_round(w->x1, w->y1, w->x2, w->y2, w->radius);
-        else fx_draw_rect(w->x1, w->y1, w->x2, w->y2);
+    /* Adwaita 经典: 纯平圆角 + 锐利1px高光/阴影 (锐线不产生灰阶) */
+    int cw = w->x2-w->x1+1, ch = w->y2-w->y1+1;
+    int pr = (fx_pressed() == w);
+    int r = 4; if (r > ch/2) r = ch/2; if (r > cw/2) r = cw/2;
+    fx_set_color(w->bg);
+    fx_fill_rect_round(w->x1, w->y1, w->x2, w->y2, r);
+    if (!pr) {
+        fx_set_color(btn_mix(w->bg, FX_WHITE, 90));          /* 顶高光 */
+        fx_draw_hline(w->x1 + r, w->x2 - r, w->y1 + 1);
+        fx_set_color(btn_mix(w->bg, FX_BLACK, 60));          /* 底阴影 */
+        fx_draw_hline(w->x1 + r, w->x2 - r, w->y2 - 1);
+    } else {
+        fx_set_color(btn_mix(w->bg, FX_BLACK, 90));          /* 按下: 顶变阴影=内凹 */
+        fx_draw_hline(w->x1 + r, w->x2 - r, w->y1 + 1);
     }
+    fx_set_color(pr ? FX_RGB(60, 60, 60) : darken(w->bg));   /* 1px 同系深边 */
+    fx_draw_hline(w->x1 + r, w->x2 - r, w->y1);
+    fx_draw_hline(w->x1 + r, w->x2 - r, w->y2);
+    fx_draw_vline(w->x1, w->y1 + r, w->y2 - r);
+    fx_draw_vline(w->x2, w->y1 + r, w->y2 - r);
     if (w->title[0]) {
         int tw = fx_text_width(w->title);
-        int tx = (w->x1 + w->x2 - tw) / 2;
-        int ty = (w->y1 + w->y2 - 16) / 2;
-        fx_draw_text_c(tx, ty, w->title, w->fg, bg);
+        fx_draw_text_c(w->x1 + (cw-tw)/2 + pr, w->y1 + (ch-18)/2 + pr,
+                       w->title, w->fg, w->bg);
     }
 }
 
@@ -49,14 +66,14 @@ void fxtk_draw_grid(fx_widget_t *w)
     fx_set_color(w->bg);
     fx_fill_rect(w->x1, w->y1, w->x2, w->y2);
     if (w->lines > 0 && w->rows > 0) {
-        fx_set_color(darken(w->bg));
+        fx_set_color(fxtk_grid_lines_on() ? w->fg : w->bg);
         int cellw = (w->x2 - w->x1 + 1) / w->rows;
         int cellh = (w->y2 - w->y1 + 1) / w->lines;
         for (int r = 1; r < w->lines; r++) fx_draw_hline(w->x1, w->x2, w->y1 + r * cellh);
         for (int c = 1; c < w->rows; c++) fx_draw_vline(w->x1 + c * cellw, w->y1, w->y2);
     }
     if (w->border > 0) {
-        fx_set_color(darken(w->bg));
+        fx_set_color(fxtk_grid_lines_on() ? w->fg : w->bg);
         fx_draw_rect(w->x1, w->y1, w->x2, w->y2);
     }
 }

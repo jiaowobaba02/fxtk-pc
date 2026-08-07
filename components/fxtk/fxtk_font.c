@@ -4,6 +4,7 @@
 #include "fxtk.h"
 #include <SDL2/SDL_ttf.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 // 【修复】声明外部像素绘制函数
@@ -19,6 +20,21 @@ void fxtk_font_init(const char *font_path, int size)
         return;
     }
     g_font = TTF_OpenFont(font_path, size);
+    if (!g_font) {   /* 跨平台回退链: 环境变量 → Linux → Windows */
+        const char *env = getenv("FXTK_FONT");
+        if (env) g_font = TTF_OpenFont(env, size);
+        static const char *fb[] = {
+            "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",
+            "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",
+            "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "C:/Windows/Fonts/msyh.ttc",
+            "C:/Windows/Fonts/simhei.ttf",
+            "C:/Windows/Fonts/arial.ttf",
+        };
+        for (int i = 0; !g_font && i < (int)(sizeof(fb)/sizeof(fb[0])); i++)
+            g_font = TTF_OpenFont(fb[i], size);
+    }
     g_font_size = size;
     if (!g_font) {
         printf("Font load failed (%s): %s\n", font_path, TTF_GetError());
