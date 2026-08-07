@@ -40,7 +40,7 @@ static int sdl_init(void)
         printf("SDL Init failed: %s\n", SDL_GetError());
         return -1;
     }
-    window = SDL_CreateWindow("fxtk Linux Simulator",
+    window = SDL_CreateWindow("fxtk v1.0 · PC 模拟器",
                               SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
                               INITIAL_WIDTH, INITIAL_HEIGHT,
                               SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE);

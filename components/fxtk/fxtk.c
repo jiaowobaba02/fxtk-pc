@@ -19,6 +19,7 @@ static fx_widget_t *s_parent = NULL;
 static int s_touch_prev = 0;
 static int s_last_tx = -1, s_last_ty = -1;
 static int s_repaint = 1;
+static int s_full = 0;
 static int s_autorepaint = 1;
 static fx_color_t s_bg = FX_RGB(240, 240, 240);
 #define FX_DIRTY_MAX 8
@@ -442,7 +443,9 @@ void fx_poll(void)
     s_tick++;
     int bl=(s_tick/25)&1;
     if (s_focus && s_focus->type==FX_W_TEXTEDIT && bl!=s_blink) { s_blink=bl; fx_repaint_rect(s_focus->x1,s_focus->y1,s_focus->x2,s_focus->y2); }
-    if (s_repaint && s_dirty_n>0) {
+    if (s_full) { s_full = 0; s_repaint = 0; s_dirty_n = 0;
+fx_frame_begin(); fxtk_draw_all(); fx_frame_end(); }
+else if (s_repaint && s_dirty_n > 0) {
         s_repaint=0; fx_frame_begin();
         for (int i=0;i<s_dirty_n;i++) redraw_region(s_dirty[i][0],s_dirty[i][1],s_dirty[i][2],s_dirty[i][3]);
         s_dirty_n=0; fx_frame_end();

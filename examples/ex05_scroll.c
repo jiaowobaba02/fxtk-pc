@@ -7,7 +7,7 @@ static void on_view(fx_widget_t *w, void *ud) {
     int x1, y1, x2, y2; fx_widget_rect(w, &x1, &y1, &x2, &y2);
     int cw = x2 - x1 + 1, ch = y2 - y1 + 1;
     int row = 36, total = 100 * row, maxs = total - ch; if (maxs < 0) maxs = 0;
-    s_off += fx_wheel_take(w) * 24;
+    s_off -= fx_wheel_take(w) * 24;
     if (s_off < 0) s_off = 0; if (s_off > maxs) s_off = maxs;
     fx_set_color(FX_WHITE); fx_fill_rect(0, 0, cw - 1, ch - 1);
     for (int i = s_off / row; i < 100; i++) {

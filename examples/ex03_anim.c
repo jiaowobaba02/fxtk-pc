@@ -1,5 +1,6 @@
 /** ex03_anim — anim 画布: 波形 + 旋转矢量 */
 #include "fxtk.h"
+#include "fxtk_effects.h"
 #include <math.h>
 static int s_t = 0;
 static void on_cv(fx_widget_t *w, void *ud) {
