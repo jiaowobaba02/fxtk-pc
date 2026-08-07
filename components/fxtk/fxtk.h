@@ -184,6 +184,7 @@ typedef struct {
     int  (*key_read)(fx_keyev_t *ev);
     void (*clip_set)(const char *s);          /* 可选: 系统剪贴板 */
     const char *(*clip_get)(void);
+    void (*set_title)(const char *s);      /* 可选: 窗口标题 */
     int  (*wheel_read)(int *x, int *y, int *dy);  /* 可选: 滚轮 */        /* 可选: 键盘事件 */
 } fx_driver_t;
 
@@ -194,6 +195,7 @@ uint16_t fx_height(void);
 void fx_set_autorepaint(int on);
 void fx_set_touch_debug(int on);
 void fx_set_bg(fx_color_t c);
+void fx_set_window_title(const char *s);  /* 运行时改窗口标题 */
 
 extern fx_driver_t fx_st6201_driver;
 int  fx_gt911_init(void);

@@ -561,3 +561,5 @@ void fx_widget_set_rect(fx_widget_t *w,int x1,int y1,int x2,int y2)
 void fx_scroll_content(fx_widget_t *w,int h){ if (w) w->content_h=(int16_t)h; }
 void fx_set_fgcolor(fx_widget_t *w,fx_color_t c){ if(!w)return; w->fg=c; fx_repaint_rect(w->x1,w->y1,w->x2,w->y2); }
 int fx_wheel_take(fx_widget_t *w) { if (s_wheel_tgt != w) return 0; int d = s_wheel_acc; s_wheel_acc = 0; return d; }
+
+void fx_set_window_title(const char *s) { if (s_drv && s_drv->set_title) s_drv->set_title(s); }
