@@ -24,7 +24,7 @@ echo "🔨 [$TARGET] -> dist/win/$OUT"
 x86_64-w64-mingw32-gcc -O2 -I. -I../components/fxtk $INC \
     ../components/fxtk/fxtk.c ../components/fxtk/fxtk_draw.c \
     ../components/fxtk/fxtk_widgets.c ../components/fxtk/fxtk_font.c \
-    ../components/fxtk/fxtk_effects.c \
+    ../components/fxtk/fxtk_effects.c ../components/fxtk/fxtk_extra.c \
     fxtk_sdl_driver.c fxtk_image_sdl.c main_linux.c $SRCS \
     -o dist/win/$OUT $LIB \
     -lmingw32 -lSDL2main -lSDL2 -lSDL2_ttf -lSDL2_image -lm \
@@ -35,3 +35,9 @@ if [ ! -f dist/win/SDL2.dll ]; then
 fi
 [ "$MODE" = "--zip" ] && { (cd dist && rm -f fxtk-v1.0-windows.zip && zip -qr fxtk-v1.0-windows.zip win); echo "📦 zip 已更新"; }
 echo "✅ 完成: 虚拟机双击 dist/win/$OUT 即玩"
+
+# 冒烟: ./build_win_cross.sh app --wine
+if [ "$MODE" = "--wine" ]; then
+    echo "🍷 wine 冒烟测试 (关窗口结束)..."
+    (cd dist/win && wine ./$OUT)
+fi

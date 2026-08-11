@@ -1,24 +1,51 @@
-# Quickstart
+# fxtk 快速上手（PC / Linux 模拟器）
 
-## 1. 依赖与编译
-见 README。`build.sh` 编译核心 + SDL 驱动 + `app.c`。
+## 构建与运行
 
-## 2. 最小应用
+在 `linux_sim` 目录执行 `build.sh`，然后运行生成的 `fxtk_sim`。窗口可任意拉伸，界面等比铺满。
+
+## 三步写一个界面
+
+**1. 建控件**（在 `build_desktop_pages()` 或自建函数中）：
+
 ```c
-#include "fxtk.h"
-static void on_btn(fx_widget_t *w, void *ud) { fx_set_title(w, "clicked!"); }
-void app_init(void) {
-    fx_set_bg(FX_RGB(240,240,240));
-    fx_button_new(pixel("60,80","200,120"), title("OK"), color(FX_RGB(33,150,243)), call(on_btn));
+fx_label_new(percent("0.02,0.01","0.98,0.09"),
+             title("我的应用"), fgcolor(FX_RGB(51,51,51)));
+fx_button_new(pixel("100,100","220,136"), name("btn"),
+              title("点我"), call(on_click));
+```
+
+**2. 写回调**：
+
+```c
+static void on_click(fx_widget_t *w, void *ud) {
+    static int n = 0;
+    char b[32]; snprintf(b, sizeof b, "被点 %d 次", ++n);
+    fx_set_title(w, b);          /* 自动重绘 */
 }
 ```
-`app_init` 在 `fx_init` 之后被 main 调用；主循环每帧调用 `fx_poll()`。
 
-## 3. 坐标系统
-- `pixel("x1,y1","x2,y2")`：基于 480x272 设计分辨率，窗口缩放时等比拉伸；
-- `percent("0.1,0.1","0.9,0.3")`：父容器比例；
-- `grid("name", r1,c1,r2,c2)`：网格跨格。
+**3. 画布自绘**（立即式）：
 
-## 4. 画布动画
-`fx_canvas_new(..., anim(1), call(cb))`：回调每帧执行，回调内用立即模式绘图，
-坐标原点在画布左上角。`fx_canvas_enable_buf(w)` 开启离屏缓冲防撕裂。
+```c
+static void on_draw(fx_widget_t *w, void *ud) {
+    int x1,y1,x2,y2; fx_widget_rect(w,&x1,&y1,&x2,&y2);
+    int cw=x2-x1+1, ch=y2-y1+1;
+    fx_set_color(FX_BLACK); fx_fill_rect(0,0,cw-1,ch-1);
+    fx_set_color(FX_YELLOW); fx_draw_circle(cw/2, ch/2, ch/3);
+}
+fx_canvas_new(pixel("6,32","444,236"), anim(1), call(on_draw));
+```
+
+## 布局选择
+
+- 固定小控件 → `pixel()`（设计坐标，等比缩放）。
+- 需要铺满/对齐父容器 → `percent()`（0.0~1.0）。
+- 表格类 → `grid()`。
+
+## 常用操作
+
+- 改文字 `fx_set_title`；改矩形 `fx_widget_set_rect`；
+- 查控件 `fx_find("name")`；切换父 `fx_parent(...)`；
+- 读鼠标 `fx_touch_state`；读按键 `fx_last_key`。
+

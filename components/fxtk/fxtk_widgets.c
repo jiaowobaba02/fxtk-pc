@@ -7,6 +7,7 @@
 #include <string.h>
 #include <stdio.h>
 
+void fxtk_apply_fit(fx_widget_t *w);
 static fx_color_t darken(fx_color_t c)
 {
     return (fx_color_t)((((c >> 11) & 31) / 2 << 11) |
@@ -44,21 +45,33 @@ void fxtk_draw_button(fx_widget_t *w)
     fx_draw_vline(w->x1, w->y1 + r, w->y2 - r);
     fx_draw_vline(w->x2, w->y1 + r, w->y2 - r);
     if (w->title[0]) {
-        int tw = fx_text_width(w->title);
-        fx_draw_text_c(w->x1 + (cw-tw)/2 + pr, w->y1 + (ch-18)/2 + pr,
-                       w->title, w->fg, w->bg);
+        int fs = w->lines > 0 ? w->lines : 0;
+        int th = fs > 0 ? fs + 4 : 18;
+        int tw = fxtk_text_width_size(fs, w->title);
+        if (fs <= 0) fx_draw_text_c(w->x1 + (cw-tw)/2 + pr, w->y1 + (ch-18)/2 + pr,
+                          w->title, w->fg, w->bg);
+        else fxtk_draw_text_size(fs, w->x1 + (cw-tw)/2 + pr, w->y1 + (ch-th)/2 + pr,
+                          w->title, w->fg, w->bg);
     }
 }
 
 void fxtk_draw_label(fx_widget_t *w)
 {
+    static int dbg = 0;
+    if (w->lines == 24 && dbg < 2) { fprintf(stderr, "[label] draw fs=%d\n", (int)w->lines); dbg++; }
+    /* line(n)=字号(缺省18), row(0/1/2)=左/中/右, 垂直自动居中 */
     if (!w->title[0]) return;
-    fx_color_t text_bg = (w->bg == FX_BLACK) ? fx_get_bg() : w->bg;
-    if (w->bg != FX_BLACK) {
-        fx_set_color(w->bg);
-        fx_fill_rect(w->x1, w->y1, w->x2, w->y2);
-    }
-    fx_draw_text_c(w->x1, w->y1, w->title, w->fg, text_bg);
+    int fs = w->lines > 0 ? w->lines : 0;
+    int cw = w->x2-w->x1+1, ch = w->y2-w->y1+1;
+    int tw = fxtk_text_width_size(fs, w->title);
+    int th = fs > 0 ? fs + 4 : 18;
+    int x = w->x1;
+    if (w->rows == 1) x = w->x1 + (cw - tw) / 2;
+    else if (w->rows == 2) x = w->x2 - tw;
+    if (w->bg != FX_BLACK) { fx_set_color(w->bg); fx_fill_rect(w->x1, w->y1, w->x2, w->y2); }
+    fx_color_t tbg = (w->bg == FX_BLACK) ? fx_get_bg() : w->bg;
+    if (fs <= 0) fx_draw_text_c(x, w->y1 + (ch - 18) / 2, w->title, w->fg, tbg);
+    else fxtk_draw_text_size(fs, x, w->y1 + (ch - th) / 2 + 2, w->title, w->fg, tbg);
 }
 
 void fxtk_draw_grid(fx_widget_t *w)
@@ -80,6 +93,7 @@ void fxtk_draw_grid(fx_widget_t *w)
 
 void fxtk_draw_canvas(fx_widget_t *w)
 {
+    fxtk_apply_fit(w);   /* 铺底前强制收拢, 杜绝二次变大 */
     fx_set_color(w->bg);
     fx_fill_rect(w->x1, w->y1, w->x2, w->y2);
     if (w->border > 0) {
@@ -229,15 +243,17 @@ void fxtk_draw_textedit(fx_widget_t *w)
     int lh = 22;
 
     /* 自动换行: 计算每行起点 */
-    static int st[512];
-    int nl = 1; st[0] = 0;
+    static int st[512]; static int se[512];
+    int nl = 1; st[0] = 0; se[0] = len;
     int acc = 0, i2 = 0;
     while (i2 < len && nl < 511) {
+        if (txt[i2] == '\n') { se[nl-1] = i2; st[nl] = i2+1; se[nl] = len; nl++; acc = 0; i2++; continue; }
         int j = te_nx(txt, i2);
         int cw = fx_text_width_n(txt + i2, j - i2);
-        if (acc + cw > aw && j > st[nl - 1]) { st[nl++] = i2; acc = 0; continue; }
+        if (acc + cw > aw && j > st[nl - 1]) { se[nl-1] = i2; st[nl] = i2; se[nl] = len; nl++; acc = 0; continue; }
         acc += cw; i2 = j;
     }
+    se[nl-1] = len;
     int total_h = nl * lh + 8;
     w->content_h = (int16_t)(total_h > 32000 ? 32000 : total_h);
     int vis_h = w->y2 - w->y1 - 10;
@@ -253,7 +269,7 @@ void fxtk_draw_textedit(fx_widget_t *w)
         int y = ty0 + L * lh;
         if (y + lh < w->y1 + 2 || y > w->y2 - 2) continue;
         int s0 = st[L];
-        int s1 = (L + 1 < nl) ? st[L + 1] : len;
+        int s1 = se[L];
         fx_draw_text_c_n(tx, y, txt + s0, s1 - s0, fg, bg);
         if (b > a) {
             int hs = s0 > a ? s0 : a, he = s1 < b ? s1 : b;
@@ -261,7 +277,7 @@ void fxtk_draw_textedit(fx_widget_t *w)
                 int wxs = fx_text_width_n(txt + s0, hs - s0);
                 int wxe = fx_text_width_n(txt + s0, he - s0);
                 fx_set_color(FX_RGB(33, 150, 243));
-                fx_fill_rect(tx + wxs, y - 1, tx + wxe, y + 17);
+                fx_fill_rect(tx + wxs, y - 1, tx + wxe, y + lh - 2);
                 fx_draw_text_c_n(tx + wxs, y, txt + hs, he - hs, FX_WHITE, FX_RGB(33, 150, 243));
             }
         }

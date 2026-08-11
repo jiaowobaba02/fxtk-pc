@@ -1,7 +1,6 @@
-# fxtk — 面向 ESP32 的嵌入式 GUI 框架 + Linux PC 模拟器
+# fxtk — 轻量GUI框架
 
 fxtk 是一个**单线程、脏区重绘、属性宏驱动**的轻量 GUI 框架。核心用纯 C 编写，
-光栅化在 CPU 完成（与 ESP32 真机行为一致），PC 端通过 SDL2 驱动呈现，
 并额外提供桌面级扩展（输入框/滚动/滚轮/剪贴板）与渲染引擎能力（贴图/旋转/光追演示）。
 ![graph](graph.png)
 ![image](image.png)
@@ -52,6 +51,7 @@ cd linux_sim
 - [docs/desktop.md](docs/desktop.md) — 桌面扩展语义（焦点/选区/滚轮/滚动）
 - [docs/effects.md](docs/effects.md) — 图片/特效/光追与 CPU/GPU 说明
 - [docs/examples.md](docs/examples.md) — 示例导读
+- [docs/guide.md](docs/guide.md) — 各种函数的用法
 
 ## 许可
 

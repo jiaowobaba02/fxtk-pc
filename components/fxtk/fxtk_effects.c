@@ -9,6 +9,10 @@ void fxtk_put_px(int x, int y, uint16_t c);   /* fxtk_draw.c */
 /* 旋转贴图: 对包围盒内每个屏幕像素, 反向旋转回源图采样 (最近邻) */
 void fx_draw_image_rot(fx_image_t *img, int cx, int cy, int angle_deg, int scale_pct)
 {
+    extern int fxtk_image_rot_gpu(const fx_image_t*,int,int,int,int,double);
+    if (fxtk_image_rot_gpu(img,cx,cy,scale_pct,scale_pct,(double)angle_deg)) return;   /* v2: GPU旋转 */
+
+
     if (!img || !img->px || scale_pct <= 0) return;
     float rad = (float)angle_deg * 3.14159265f / 180.0f;
     float cs = cosf(rad), sn = sinf(rad);

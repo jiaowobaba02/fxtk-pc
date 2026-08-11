@@ -20,7 +20,7 @@
 
 struct fx_widget {
     uint8_t type;
-    uint8_t flags;
+    uint16_t flags;
     int16_t x1, y1, x2, y2;
     uint8_t pos_mode;
     int16_t ox1, oy1, ox2, oy2;

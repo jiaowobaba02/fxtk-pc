@@ -1,5 +1,5 @@
 #!/bin/bash
-VER=v1.0
+VER=v2.0
 OUT=fxtk-$VER
 rm -rf $OUT fxtk-$VER.tar.gz
 mkdir -p $OUT/linux_sim $OUT/examples $OUT/docs
@@ -9,6 +9,10 @@ rm -f $OUT/linux_sim/fxtk_sim $OUT/linux_sim/*.o
 EXDIR=examples; [ -d "$EXDIR" ] || EXDIR=../examples
 cp "$EXDIR"/*.c $OUT/examples/ && echo "✅ examples 拷入: $(ls $OUT/examples | wc -l) 个"
 cp ../README.md $OUT/ 2>/dev/null
+cp ../graph.png $OUT/ 2>/dev/null
+cp ../texting.png $OUT/ 2>/dev/null
+cp ../image.png $OUT/ 2>/dev/null
+cp ../rending.png $OUT/ 2>/dev/null
 cp ../docs/*.md $OUT/docs/ 2>/dev/null
 find $OUT \( -name "*.bak" -o -name "*.orig" -o -name "*.rej" -o -name "*~" -o -name "*.o" \) -exec rm -rf {} + 2>/dev/null
 tar czf fxtk-$VER.tar.gz $OUT

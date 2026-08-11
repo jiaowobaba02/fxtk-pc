@@ -7,7 +7,7 @@ echo "🔨 Building example: $EX (from $EXDIR)"
 gcc -O2 -g -I. -I../components/fxtk \
     ../components/fxtk/fxtk.c ../components/fxtk/fxtk_draw.c \
     ../components/fxtk/fxtk_widgets.c ../components/fxtk/fxtk_font.c \
-    ../components/fxtk/fxtk_effects.c \
+    ../components/fxtk/fxtk_effects.c ../components/fxtk/fxtk_extra.c \
     fxtk_sdl_driver.c fxtk_image_sdl.c \
     main_linux.c \
     $EXDIR/$EX.c -o $EXDIR/$EX \

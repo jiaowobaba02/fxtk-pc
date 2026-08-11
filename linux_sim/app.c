@@ -95,6 +95,8 @@ static void on_canvas(fx_widget_t *w, void *ud) {
     if (s_phase > 4096) s_phase -= 4096;
 }
 
+static void on_pt(fx_widget_t *w, void *ud);
+static void on_pt_slider(fx_widget_t *w, void *ud);
 static void on_gfx(fx_widget_t *w, void *ud) {
     int x1, y1, x2, y2;
     fx_widget_rect(w, &x1, &y1, &x2, &y2);
@@ -165,6 +167,7 @@ static void on_3d(fx_widget_t *w, void *ud) {
         s_rt = fx_image_create(rw, rh);
         if (!s_rt) return;
     }
+    gpu_raymarch_start();   /* 首帧点火, 与 ok 解耦 */
     if (s_gpu && gpu_raymarch_ok()) {
         gpu_raymarch_render(s_rt->px, rw, rh, s_rt_time);
     } else {
@@ -203,21 +206,24 @@ static fx_image_t *make_pic(int kind) {
 
 static void build_ui(void) {
     fx_label_new(percent("0.02,0.01", "0.98,0.09"), title("fxtk 演示 · 标签页"), fgcolor(FX_RGB(51, 51, 51)));
-    fx_tab_new(pixel("10,26", "470,266"), title("波形,图形,控件,图片,3D,输入,画板,键鼠,压测,滚动"), name("tab"), color(FX_RGB(224, 224, 224)));
+    fx_tab_new(pixel("10,26", "470,266"), title("波形,图形,控件,图片,3D,输入,画板,键鼠,压测,滚动,组件,粒子"), name("tab"), color(FX_RGB(224, 224, 224)));
     fx_parent(fx_find("tab"));
 
     fx_canvas_new(pixel("6,32", "444,188"), name("wave_cv"), page(0), anim(1), color(FX_RGB(30, 30, 30)), call(on_canvas));
     fx_label_new(pixel("6,194", "56,212"), page(0), title("速度"), fgcolor(FX_RGB(51, 51, 51)));
-    fx_slider_new(pixel("60,194", "292,212"), name("speed"), page(0), value(s_speed), color(FX_RGB(76, 175, 80)), call(on_speed));
-    fx_progress_new(pixel("300,196", "444,210"), name("speed_bar"), page(0), value(s_speed));
-    fx_checkbox_new(pixel("6,218", "150,240"), title("波形开关"), name("wave"), page(0), value(1), fgcolor(FX_RGB(51, 51, 51)), call(on_wave));
+    fx_slider_new(name("wv_s1"), pixel("60,194", "292,212"), name("speed"), page(0), value(s_speed), color(FX_RGB(76, 175, 80)), call(on_speed));
+    fx_progress_new(name("wv_prog"), pixel("300,196", "444,210"), name("speed_bar"), page(0), value(s_speed));
+    fx_checkbox_new(pixel("6,218", "150,240"), name("wv_chk"), title("波形开关"), name("wave"), page(0), value(1), fgcolor(FX_RGB(51, 51, 51)), call(on_wave));
 
     fx_canvas_new(pixel("6,32", "444,196"), name("gfx_cv"), page(1), anim(1), color(FX_RGB(30, 30, 30)), call(on_gfx));
-    fx_button_new(pixel("6,202", "110,236"), page(1), title("切换模式"), color(FX_RGB(33, 150, 243)), call(on_mode));
+    fx_parent(fx_find("gfx_cv"));   /* C2: canvas 当容器 */
+    fx_button_new(pixel("20,40", "90,64"), page(1), title("内嵌"), color(FX_RGB(255,152,0)), call(on_mode));
+    fx_parent(fx_find("tab"));      /* 恢复 */
+    fx_button_new(pixel("6,202", "110,236"), name("sh_btn"), page(1), title("切换模式"), color(FX_RGB(33, 150, 243)), call(on_mode));
     fx_slider_new(pixel("120,208", "300,222"), name("spin"), page(1), value(s_spin), color(FX_RGB(244, 67, 54)), call(on_spin));
     fx_label_new(pixel("310,204", "444,236"), name("gfx_info"), page(1), title("模式: 全部"), fgcolor(FX_RGB(51, 51, 51)));
 
-    fx_grid_map(pixel("6,32", "280,220"), line(3), row(3), name("keys"), page(2));
+    fx_grid_map(pixel("6,32", "280,220"), line(3), row(3), name("keys"), page(2), dense());
     for (int i = 0; i < 9; i++) {
         fx_widget_t *b = fx_button_new(grid("keys", i / 3 + 1, i % 3 + 1, i / 3 + 1, i % 3 + 1),
                                        title(s_keys[i]), color(FX_RGB(33, 150, 243)), page(2), call(on_key));
@@ -233,6 +239,9 @@ static void build_ui(void) {
 
     /* 页5: 3D 光线步进 */
     fx_canvas_new(pixel("6,32", "444,196"), name("rt_cv"), page(4), anim(1), color(FX_BLACK), call(on_3d));
+    fx_canvas_new(pixel("6,32", "444,196"), name("pt_cv"), page(11), anim(1), color(FX_BLACK), call(on_pt));
+    fx_slider_new(pixel("6,204", "300,220"), page(11), call(on_pt_slider));
+    fx_label_new(pixel("306,204", "444,220"), page(11), title("拖动调粒子数(×200)"), fgcolor(FX_RGB(51, 51, 51)));
     fx_button_new(pixel("6,202", "76,236"), page(4), title("超频: 关"), color(FX_RGB(244, 67, 54)), call(on_oc));
     fx_button_new(pixel("82,202", "152,236"), page(4), title("GPU: 关"), color(FX_RGB(76, 175, 80)), call(on_gpu));
     fx_slider_new(pixel("160,204", "250,218"), name("rspeed"), page(4), value(s_rspeed), color(FX_RGB(33, 150, 243)), call(on_rspeed));
@@ -243,6 +252,85 @@ static void build_ui(void) {
     fx_parent(NULL);
 }
 
+
+/* 固定像素区域: 工作区拉伸, 控件恒真实像素 (>=640 宽生效) */
+static int s_fix_w = -1;
+static void on_fix(fx_widget_t *w, void *ud)
+{
+    (void)w; (void)ud;
+    return;   /* v1.0: 固定像素 Chrome 延期 v1.1 (需布局系统真实像素锚点) */
+    int W = fxtk_drv_width(), H = fxtk_drv_height();
+    if (W <= 0 || W == s_fix_w || W < 640) return;
+    s_fix_w = W;
+    int ty = 34;
+    fx_widget_t *tab = fx_find("tab");
+    if (tab) { int a,b,c,d; fx_widget_rect(tab,&a,&b,&c,&d); ty = d + 8; }
+    /* 画板: 画布吃满, 右列固定像素 */
+    fx_widget_t *cv = fx_find("paint_cv");
+    if (cv) fx_widget_set_rect(cv, 8, ty, W - 126, H - 8);
+    {
+        const char *bs[5] = { "pb_r","pb_g","pb_b","pb_k","pb_c" };
+        for (int i = 0; i < 5; i++) {
+            fx_widget_t *b = fx_find(bs[i]);
+            if (b) fx_widget_set_rect(b, W - 110, ty + i * 36, W - 8, ty + i * 36 + 28);
+        }
+    }
+    /* 波形: 画布吃满 + 底部固定条 */
+    fx_widget_t *wc = fx_find("wave_cv");
+    if (wc) fx_widget_set_rect(wc, 8, ty, W - 8, H - 44);
+    fx_widget_t *ck = fx_find("wv_chk");
+    if (ck) fx_widget_set_rect(ck, 8, H - 34, 130, H - 10);
+    fx_widget_t *s1 = fx_find("wv_s1");
+    if (s1) fx_widget_set_rect(s1, 140, H - 30, 340, H - 14);
+    fx_widget_t *pg = fx_find("wv_prog");
+    if (pg) fx_widget_set_rect(pg, W - 260, H - 30, W - 8, H - 14);
+    /* 图形: 画布吃满 + 底部固定条 */
+    fx_widget_t *gc = fx_find("gfx_cv");
+    if (gc) fx_widget_set_rect(gc, 8, ty, W - 8, H - 44);
+    fx_widget_t *sb = fx_find("sh_btn");
+    if (sb) fx_widget_set_rect(sb, 8, H - 40, 150, H - 8);
+    fx_widget_t *ss = fx_find("spin");
+    if (ss) fx_widget_set_rect(ss, 160, H - 34, W - 260, H - 16);
+    fx_widget_t *gi = fx_find("gfx_info");
+    if (gi) fx_widget_set_rect(gi, W - 250, H - 36, W - 8, H - 12);
+}
+
+/* ================= 页11: 粒子性能 (GPU 万级图元) ================= */
+#include <time.h>
+#define PT_MAX 2000000
+typedef struct { float x,y,vx,vy; uint8_t c; } pt_t;
+static pt_t s_pt[PT_MAX];
+static int s_pt_init = 0; static int s_pt_n = 6000;
+static fx_image_t *s_ptimg=NULL; static int s_ptimg_w=0, s_ptimg_h=0;
+static double s_pt_last = 0; static float s_pt_fps = 0;
+static double pt_now(void){ struct timespec ts; clock_gettime(CLOCK_MONOTONIC,&ts); return ts.tv_sec*1000.0+ts.tv_nsec/1e6; }
+static void on_pt_slider(fx_widget_t *w, void *ud){ (void)ud; int v=fx_get_value(w); s_pt_n=v*20000; if(s_pt_n<100)s_pt_n=100; if(s_pt_n>PT_MAX)s_pt_n=PT_MAX; }
+static void on_pt(fx_widget_t *w, void *ud){
+    (void)ud; int x1,y1,x2,y2; fx_widget_rect(w,&x1,&y1,&x2,&y2);
+    int cw=x2-x1+1, ch=y2-y1+1;
+    if(!s_pt_init){ srand(12345);
+        for(int i=0;i<PT_MAX;i++){ s_pt[i].x=(float)(rand()%cw); s_pt[i].y=(float)(rand()%ch);
+            float a=(float)(rand()%360)*0.01745f, sp=0.5f+(float)(rand()%100)/100.0f;
+            s_pt[i].vx=cosf(a)*sp; s_pt[i].vy=sinf(a)*sp; s_pt[i].c=(uint8_t)(rand()%6); }
+        s_pt_init=1; s_pt_last=pt_now(); }
+    int hw=cw/2, hh=ch/2; if(hw<1)hw=1; if(hh<1)hh=1;
+    if(!s_ptimg || s_ptimg_w!=hw || s_ptimg_h!=hh){ s_ptimg=fx_image_create(hw,hh); s_ptimg_w=hw; s_ptimg_h=hh; }
+    if(!s_ptimg) return;
+    double now=pt_now(); double dt=now-s_pt_last; s_pt_last=now; if(dt<0.1)dt=0.1; if(dt>50)dt=50;
+    s_pt_fps=s_pt_fps*0.9f+(float)(1000.0/dt)*0.1f;
+    uint16_t *px = s_ptimg->px;
+    memset(px, 0, (size_t)hw*hh*sizeof(uint16_t));
+    static const uint16_t cols[6]={0xF800,0x07E0,0x001F,0xFFE0,0x07FF,0xF81F};
+    for(int i=0;i<s_pt_n;i++){ pt_t*p=&s_pt[i];
+        p->x+=p->vx*(float)dt*0.06f; p->y+=p->vy*(float)dt*0.06f;
+        if(p->x<0)p->x+=(float)cw; if(p->x>=cw)p->x-=(float)cw;
+        if(p->y<0)p->y+=(float)ch; if(p->y>=ch)p->y-=(float)ch;
+        int X=(int)p->x>>1, Y=(int)p->y>>1;
+        if(X>=0&&X<hw&&Y>=0&&Y<hh) px[Y*hw+X]=cols[p->c]; }
+    fx_draw_image(s_ptimg, 0, 0, cw, ch);   /* GPU 2x 放大 blit */
+    char buf[64]; snprintf(buf,sizeof(buf),"FPS:%.0f  N:%d  GPU-blit",s_pt_fps,s_pt_n);
+    fx_draw_text_c(4,4,buf,FX_GREEN,FX_BLACK);
+}
 void app_init(void) {
     ESP_LOGI(TAG, "fxtk demo start (3D Raymarch)");
     for (int i = 0; i < 3; i++) s_pics[i] = make_pic(i);
@@ -250,9 +338,11 @@ void app_init(void) {
     if (s_pics[2]) fx_image_tint(s_pics[2], FX_RGB(0, 200, 255), 90);
     fx_set_bg(FX_RGB(245, 245, 245));
     fx_set_touch_debug(1);
-	fx_set_window_title("demo v1.0");
+    fx_set_window_title("demo v2.0");
     build_ui();
-    fx_canvas_enable_buf(fx_find("wave_cv"));
-    fx_canvas_enable_buf(fx_find("gfx_cv"));
+    /* v2 perf: 波形每帧全量重画, 去离屏缓冲走GPU批 */ ////fx_canvas_enable_buf(fx_find("wave_cv"));  /* v2 perf: 每帧全量重画, 走GPU批 */
+    /* v2 perf: 图形同理 */ ////fx_canvas_enable_buf(fx_find("gfx_cv"));  /* v2 perf: 同上 */
     fx_canvas_enable_buf(fx_find("rt_cv"));
+    fx_canvas_new(pixel("0,271", "0,271"), name("fixer"), anim(1),
+                  color(FX_RGB(240,240,240)), call(on_fix));
 }

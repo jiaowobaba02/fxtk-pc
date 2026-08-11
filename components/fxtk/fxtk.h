@@ -42,6 +42,7 @@ typedef enum {
     FX_A_ROW,
     FX_A_COLOR,
     FX_A_FGCOLOR,
+    FX_A_DENSE,
     FX_A_BORDER,
     FX_A_RADIUS,
     FX_A_VALUE,
@@ -82,6 +83,15 @@ fx_attr_t color(fx_color_t c);
 fx_attr_t fgcolor(fx_color_t c);
 fx_attr_t border(int n);
 fx_attr_t radius(int n);
+#define FX_POS_FIXED 3   /* 布局不重算(弹层直写坐标) */
+#define FX_F_DENSE (1<<7)   /* grid 密集模式 */
+#define FX_F_FIT   (1<<8)   /* 适应: 封顶+居中 */
+#define FX_F_READONLY (1<<9)   /* 文本框只读 */
+void fx_textedit_set_readonly(fx_widget_t *w,int ro);
+void fx_set_fit(fx_widget_t *w, int on);
+void fxtk_fit_rect(fx_widget_t *w,int*x1,int*y1,int*x2,int*y2);
+int  fxtk_max_scale1000(void);
+fx_attr_t dense(void);
 fx_attr_t value(int n);
 fx_attr_t page(int n);
 fx_attr_t anim(int n);
@@ -126,9 +136,12 @@ void fx_set_cb(fx_widget_t *w, fx_cb_t cb, void *ud);
 void fx_set_visible(fx_widget_t *w, int vis);
 int  fx_widget_type(const fx_widget_t *w);
 const char *fx_widget_title(const fx_widget_t *w);
+void fx_widget_set_rect(fx_widget_t *w, int x1, int y1, int x2, int y2);
 void fx_widget_rect(const fx_widget_t *w, int *x1, int *y1, int *x2, int *y2);
 
 void fx_layout(void);
+void fx_set_max_scale(float f);   /* 控件缩放上限(倍), 默认2.5 */
+void fxtk_apply_fit(fx_widget_t *w);
 void fx_touch_press(int x, int y);
 void fx_touch_release(int x, int y);
 void fx_touch_move(int x, int y);
@@ -170,7 +183,8 @@ int  fx_canvas_enable_buf(fx_widget_t *cv);
 /* 桌面扩展: 键盘事件 */
 typedef struct { char utf8[64]; int key; int down; int mod; } fx_keyev_t;
 enum { FX_KEY_BACKSPACE = 8, FX_KEY_RETURN = 13, FX_KEY_ESCAPE = 27,
-       FX_KEY_LEFT = 1, FX_KEY_RIGHT = 2, FX_KEY_HOME = 3, FX_KEY_END = 4 };
+       FX_KEY_LEFT = 1, FX_KEY_RIGHT = 2, FX_KEY_HOME = 3, FX_KEY_END = 4,
+       FX_KEY_UP = 5, FX_KEY_DOWN = 6, FX_KEY_DELETE = 127 };
 
 typedef struct {
     uint16_t width, height;
@@ -186,6 +200,12 @@ typedef struct {
     const char *(*clip_get)(void);
     void (*set_title)(const char *s);      /* 可选: 窗口标题 */
     int  (*wheel_read)(int *x, int *y, int *dy);  /* 可选: 滚轮 */        /* 可选: 键盘事件 */
+    void (*blit_img)(const uint16_t *px,int w,int h,int dx,int dy,int dw,int dh,int dark); /* GPU缩放blit */
+    void (*set_clip_rect)(int x1,int y1,int x2,int y2);
+    void (*fill_tri)(int x1,int y1,int x2,int y2,int x3,int y3,uint16_t c); /* GPU三角 */
+    void (*draw_line)(int x1,int y1,int x2,int y2,uint16_t c); /* GPU折线 */
+    void (*blit_tex)(void *tex,int sx,int sy,int sw,int sh,int dx,int dy); /* GPU文字blit(src+dst) */
+    void (*blit_img_rot)(const uint16_t *px,int w,int h,int cx,int cy,int dw,int dh,double ang); /* GPU旋转blit */
 } fx_driver_t;
 
 void fx_init(const fx_driver_t *drv);
@@ -208,3 +228,23 @@ fx_color_t fx_get_bg(void);
 }
 #endif
 #endif
+
+/* ---- extra: 多尺寸文字 / 列表 / 下拉 ---- */
+void *fxtk_font_size(int size);
+int  fxtk_text_width_size(int size, const char *t);
+void fxtk_draw_text_size(int size, int x, int y, const char *t, fx_color_t fg, fx_color_t bg);
+fx_widget_t *fx_list_new(const char *r1, const char *r2);
+void fx_list_add(fx_widget_t *w, const char *t);
+void fx_list_set_cb(fx_widget_t *w, void (*cb)(fx_widget_t*, void*));
+int  fx_list_sel(fx_widget_t *w);
+fx_widget_t *fx_drop_new(const char *r1, const char *r2);
+void fx_drop_add(fx_widget_t *w, const char *t);
+void fx_set_fontsize(fx_widget_t *w, int size);
+void fx_set_align(fx_widget_t *w, int a);
+fx_widget_t *fx_list_new_p(const char *r1, const char *r2, int pg);
+fx_widget_t *fx_drop_new_p(const char *r1, const char *r2, int pg);
+int  fxtk_ui_scale(void);
+void fxtk_set_ui_scale_cap(int p);   /* 行高/字号缩放上限% */          /* UI 缩放百分比, 480 设计宽=100 */
+int  fxtk_font_height(int size);  /* 缩放后字高 */
+int  fxtk_drv_width(void);
+int  fxtk_drv_height(void);

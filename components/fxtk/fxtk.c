@@ -43,6 +43,8 @@ static int s_wheel_acc = 0;
 static int s_sx1000 = 1000, s_sy1000 = 1000;
 
 static void redraw_widget_now(fx_widget_t *w);
+int fxtk_fps(void);
+static void draw_fps(void){ if(!s_drv)return; char b[48]; snprintf(b,sizeof(b),"FPS:%d W:%d H:%d",fxtk_fps(),s_drv->width,s_drv->height); fx_draw_text_c(4,s_drv->height-38,b,FX_GREEN,FX_BLACK); }
 static int te_len(fx_widget_t *w);
 static int te_sel(fx_widget_t *w, int *a, int *b);
 static void te_del_range2(fx_widget_t *w, int a, int b);
@@ -50,8 +52,30 @@ static void te_insert(fx_widget_t *w, const char *utf8);
 static void te_backspace(fx_widget_t *w);
 static void te_move(fx_widget_t *w, int key);
 static void te_caret_from_xy(fx_widget_t *w, int x, int y);
+static void te_caret_scroll(fx_widget_t *w);
+static int te_next_off(const char *s,int i);
+static void te_move_vert(fx_widget_t *w,int dir);
+static fx_widget_t *s_ctxpop,*s_ctx_te;
+static int s_sel_mode=0;
+static int s_ctx_open=0,s_ctx_hl=-1;
+extern int fxtk_shift_down(void);
+static void ctx_cb(fx_widget_t*,void*);
+static void te_sel_word(fx_widget_t*);
+static void te_sel_line(fx_widget_t*);
+static void ctx_do(int);
+static const char *s_ctx_items[5];
+static void ctx_draw(fx_widget_t*,void*);
+static void ctx_draw_abs(void){ if(!s_ctxpop)return; int x1,y1,x2,y2; fx_widget_rect(s_ctxpop,&x1,&y1,&x2,&y2); int rh=(y2-y1)/5;
+  fx_set_color(FX_WHITE); fx_fill_rect(x1,y1,x2,y2);
+  fx_set_color(FX_GRAY); fx_draw_rect(x1,y1,x2,y2);
+  for(int i=0;i<5;i++){ if(i==s_ctx_hl){fx_set_color(FX_RGB(33,150,243));fx_fill_rect(x1+1,y1+1+i*rh,x2-1,y1+1+i*rh+rh-1);}
+    fxtk_draw_text_size(14,x1+6,y1+3+i*rh,s_ctx_items[i], i==s_ctx_hl?FX_WHITE:FX_RGB(40,40,40), i==s_ctx_hl?FX_RGB(33,150,243):FX_WHITE); } }
 static void scroll_drag_to(fx_widget_t *w, int y);
-
+static void te_sel_para(fx_widget_t*);
+static int te_word_start(const char*,int);
+static int te_word_end(const char*,int);
+static int te_para_start(const char*,int);
+static int te_para_end(const char*,int);
 static int widget_in_active_page(fx_widget_t *w)
 {
     for (fx_widget_t *c = w; c->parent && c->parent != &s_root; c = c->parent)
@@ -96,6 +120,7 @@ fx_attr_t line(int n)           { fx_attr_t a={FX_A_LINE,{ {0} }}; a.v.iv.v=(int
 fx_attr_t row(int n)            { fx_attr_t a={FX_A_ROW,{ {0} }}; a.v.iv.v=(int16_t)n; return a; }
 fx_attr_t color(fx_color_t c)   { fx_attr_t a={FX_A_COLOR,{ {0} }}; a.v.color.c=c; return a; }
 fx_attr_t fgcolor(fx_color_t c) { fx_attr_t a={FX_A_FGCOLOR,{ {0} }}; a.v.color.c=c; return a; }
+fx_attr_t dense(void) { fx_attr_t a={FX_A_DENSE,{ {0} }}; return a; }
 fx_attr_t border(int n)         { fx_attr_t a={FX_A_BORDER,{ {0} }}; a.v.iv.v=(int16_t)n; return a; }
 fx_attr_t radius(int n)         { fx_attr_t a={FX_A_RADIUS,{ {0} }}; a.v.iv.v=(int16_t)n; return a; }
 fx_attr_t value(int n)          { fx_attr_t a={FX_A_VALUE,{ {0} }}; a.v.iv.v=(int16_t)n; return a; }
@@ -131,6 +156,7 @@ fx_widget_t *fx_widget_new_impl(int type, fx_attr_t attrs[])
         case FX_A_ROW: w->rows=attrs[i].v.iv.v; break;
         case FX_A_COLOR: w->bg=attrs[i].v.color.c; break;
         case FX_A_FGCOLOR: w->fg=attrs[i].v.color.c; break;
+        case FX_A_DENSE: w->flags|=FX_F_DENSE; break;
         case FX_A_BORDER: w->border=(uint8_t)attrs[i].v.iv.v; break;
         case FX_A_RADIUS: w->radius=(uint8_t)attrs[i].v.iv.v; break;
         case FX_A_VALUE: w->value=attrs[i].v.iv.v; break;
@@ -181,13 +207,60 @@ void fx_delete_impl(fx_attr_t attrs[])
 }
 
 /* ================= 布局(响应式) ================= */
+
+static int s_maxscale1000 = 1600;   /* 控件最大=1.6x设计尺寸, 大屏自适应不再放大 */
+void fxtk_fit_rect(fx_widget_t *w,int*x1,int*y1,int*x2,int*y2){
+    if(!(w->flags&FX_F_FIT))return;
+    if(s_sx1000<=1000&&s_sy1000<=1000)return;
+    int cw=*x2-*x1+1,ch=*y2-*y1+1;
+    int csx=s_sx1000>s_maxscale1000?s_maxscale1000:s_sx1000;
+    int csy=s_sy1000>s_maxscale1000?s_maxscale1000:s_sy1000;
+    int desw=(int)((int64_t)cw*1000/s_sx1000),desh=(int)((int64_t)ch*1000/s_sy1000);
+    int nw=(int)((int64_t)desw*csx/1000),nh=(int)((int64_t)desh*csy/1000);
+    if(nw>=cw&&nh>=ch)return;
+    int cx=(*x1+*x2)/2,cy=(*y1+*y2)/2;
+    *x1=cx-nw/2;*x2=*x1+nw-1;*y1=cy-nh/2;*y2=*y1+nh-1;
+}
+void fx_set_fit(fx_widget_t *w,int on){ if(!w)return; if(on)w->flags|=FX_F_FIT; else w->flags&=~FX_F_FIT; fx_layout(); }
+int fxtk_max_scale1000(void){return s_maxscale1000;}
+void fx_set_max_scale(float f){ if(f<0.5f)f=0.5f; if(f>8)f=8; s_maxscale1000=(int)(f*1000); fx_layout(); }
+/* 交互件尺寸封顶+居中: 设计分辨率下不生效, 大屏防巨型/grid拉满 */
+static void clamp_ctrl(fx_widget_t *c){
+    if (c->type!=FX_W_BUTTON && c->type!=FX_W_CHECKBOX && !(c->flags&FX_F_FIT)) return;
+    if (c->grid_ref && (c->grid_ref->flags & FX_F_DENSE)) return;   /* 密集: 铺满单元 */
+    if (s_sx1000<=1000 && s_sy1000<=1000) return;
+    int csx = s_sx1000>s_maxscale1000?s_maxscale1000:s_sx1000;
+    int csy = s_sy1000>s_maxscale1000?s_maxscale1000:s_sy1000;
+    int raww=c->x2-c->x1+1, rawh=c->y2-c->y1+1;
+    int desw, desh;
+    if (c->pos_mode==FX_POS_PIXEL){ desw=c->ox2-c->ox1+1; desh=c->oy2-c->oy1+1; }
+    else { desw=(int)((int64_t)raww*1000/s_sx1000); desh=(int)((int64_t)rawh*1000/s_sy1000); }
+    int neww=(int)((int64_t)desw*csx/1000), newh=(int)((int64_t)desh*csy/1000);
+    if(neww>=raww && newh>=rawh) return;
+    int cx=(c->x1+c->x2)/2, cy=(c->y1+c->y2)/2;
+    c->x1=(int16_t)(cx-neww/2); c->x2=(int16_t)(c->x1+neww-1);
+    c->y1=(int16_t)(cy-newh/2); c->y2=(int16_t)(c->y1+newh-1);
+}
+void fxtk_apply_fit(fx_widget_t *w){   /* 绘制期幂等fit: 从父+设计坐标现算, 无反馈 */
+    if(!(w->flags&FX_F_FIT) || w->pos_mode!=FX_POS_PIXEL) return;
+    if(s_sx1000<=1000 && s_sy1000<=1000) return;
+    fx_widget_t *p = w->parent ? w->parent : &s_root;
+    int rx1=p->x1+(int32_t)w->ox1*s_sx1000/1000, ry1=p->y1+(int32_t)w->oy1*s_sy1000/1000;
+    int rx2=p->x1+(int32_t)w->ox2*s_sx1000/1000, ry2=p->y1+(int32_t)w->oy2*s_sy1000/1000;
+    int csx=s_sx1000>s_maxscale1000?s_maxscale1000:s_sx1000;
+    int csy=s_sy1000>s_maxscale1000?s_maxscale1000:s_sy1000;
+    int nw=(int)((int64_t)(w->ox2-w->ox1+1)*csx/1000), nh=(int)((int64_t)(w->oy2-w->oy1+1)*csy/1000);
+    int cx=(rx1+rx2)/2, cy=(ry1+ry2)/2;
+    w->x1=(int16_t)(cx-nw/2); w->x2=(int16_t)(w->x1+nw-1);
+    w->y1=(int16_t)(cy-nh/2); w->y2=(int16_t)(w->y1+nh-1);
+}
 static void layout_children(fx_widget_t *p);
 void fx_layout(void)
 {
     if (!s_drv) return;
     s_root.x1=0; s_root.y1=0; s_root.x2=(int16_t)(s_drv->width-1); s_root.y2=(int16_t)(s_drv->height-1);
-    s_sx1000=(int)((int32_t)s_drv->width*1000/FX_DESIGN_W);
-    s_sy1000=(int)((int32_t)s_drv->height*1000/FX_DESIGN_H);
+    s_sx1000 = (int)((int32_t)s_drv->width*1000/FX_DESIGN_W);
+    s_sy1000 = (int)((int32_t)s_drv->height*1000/FX_DESIGN_H);
     layout_children(&s_root);
 }
 static void layout_children(fx_widget_t *p)
@@ -204,6 +277,7 @@ static void layout_children(fx_widget_t *p)
             c->x1=(int16_t)(p->x1+(int32_t)pw*c->px1/1000); c->y1=(int16_t)(p->y1+(int32_t)ph*c->py1/1000);
             c->x2=(int16_t)(p->x1+(int32_t)pw*c->px2/1000-1); c->y2=(int16_t)(p->y1+(int32_t)ph*c->py2/1000-1);
             break; }
+        case FX_POS_FIXED: break;   /* 弹层: 保留直写坐标 */
         case FX_POS_GRID: {
             fx_widget_t *g=c->grid_ref;
             if (g && g->lines>0 && g->rows>0) {
@@ -212,6 +286,7 @@ static void layout_children(fx_widget_t *p)
                 c->x2=(int16_t)(g->x1+c->gc2*cw-1); c->y2=(int16_t)(g->y1+c->gr2*ch-1);
             } break; }
         }
+        clamp_ctrl(c);
         layout_children(c);
     }
 }
@@ -243,6 +318,10 @@ static fx_widget_t *hit_test(fx_widget_t *w, int x, int y)
 /* ================= 触摸事件 ================= */
 void fx_touch_press(int x, int y)
 {
+    if(s_ctx_open&&s_ctxpop){ int x1,y1,x2,y2; fx_widget_rect(s_ctxpop,&x1,&y1,&x2,&y2);
+      if(x>=x1&&x<=x2&&y>=y1&&y<=y2){ int rh=(y2-y1)/5; int idx=(y-y1)/rh; if(idx<0)idx=0; if(idx>4)idx=4; ctx_do(idx); } else { fx_set_visible(s_ctxpop,0); s_ctx_open=0; fx_repaint(); }
+      return; }
+
     s_pressed = hit_test(&s_root, x, y);
     if (s_pressed && (s_pressed->type==FX_W_TEXTEDIT || s_pressed->type==FX_W_SCROLL)
         && s_pressed->content_h > (s_pressed->y2 - s_pressed->y1)
@@ -250,7 +329,11 @@ void fx_touch_press(int x, int y)
         s_scroll_drag = s_pressed; scroll_drag_to(s_pressed, y); return;
     }
     if (s_pressed && s_pressed->type == FX_W_TEXTEDIT) {
-        fx_set_focus(s_pressed); te_caret_from_xy(s_pressed, x, y); s_pressed->anchor = s_pressed->caret;
+        fx_set_focus(s_pressed);
+        if (fxtk_shift_down()) { te_caret_from_xy(s_pressed,x,y); }   /* Shift+点击=扩展 */
+        else { te_caret_from_xy(s_pressed, x, y);
+          static int lx=-1,ly=-1,lt=0,cn=0; if((x-lx)*(x-lx)+(y-ly)*(y-ly)<=16&&(s_tick-lt)<45)cn++; else cn=1; lx=x;ly=y;lt=s_tick;
+          if(cn==2){s_sel_mode=1;te_sel_word(s_pressed);} else if(cn>=3){s_sel_mode=2;te_sel_para(s_pressed);cn=0;} else {s_sel_mode=0;s_pressed->anchor=s_pressed->caret;} }
     } else if (s_pressed) fx_set_focus(NULL);
     if (s_pressed) { s_pressed->flags |= FX_F_PRESSED; redraw_widget_now(s_pressed); }
 }
@@ -277,8 +360,21 @@ void fx_touch_release(int x, int y)
 }
 void fx_touch_move(int x, int y)
 {
+    if(s_ctx_open&&s_ctxpop){ int x1,y1,x2,y2; fx_widget_rect(s_ctxpop,&x1,&y1,&x2,&y2);
+      int hl=-1; if(x>=x1&&x<=x2&&y>=y1&&y<=y2){ hl=(y-y1)/((y2-y1)/5); if(hl<0)hl=0; if(hl>4)hl=4; }
+      if(hl!=s_ctx_hl){ s_ctx_hl=hl; fx_repaint(); } return; }
+
     if (s_scroll_drag) { scroll_drag_to(s_scroll_drag, y); return; }
-    if (s_pressed && s_pressed->type == FX_W_TEXTEDIT) { te_caret_from_xy(s_pressed, x, y); redraw_widget_now(s_pressed); return; }
+    if (s_pressed && s_pressed->type == FX_W_TEXTEDIT) {
+fx_widget_t *te=s_pressed;
+int vis=te->y2-te->y1-10, maxs=te->content_h-vis; if(maxs<0)maxs=0;
+if (y>te->y2) te->scroll_y+=(int16_t)((y-te->y2)>10?10:(y-te->y2));      /* 拖出下缘=自动下滚 */
+else if (y<te->y1) te->scroll_y-=(int16_t)((te->y1-y)>10?10:(te->y1-y)); /* 拖出上缘=自动上滚 */
+if(te->scroll_y<0)te->scroll_y=0; if(te->scroll_y>maxs)te->scroll_y=(int16_t)maxs;
+te_caret_from_xy(te,x,y); int ci=te->caret;
+if(s_sel_mode==1){ te->caret=(ci>=te->anchor)?te_word_end(te->text_buf,ci):te_word_start(te->text_buf,ci); }
+else if(s_sel_mode==2){ te->caret=(ci>=te->anchor)?te_para_end(te->text_buf,ci):te_para_start(te->text_buf,ci); }
+redraw_widget_now(te); return; }
     if (s_pressed && s_pressed->type == FX_W_SLIDER) {
         int w = s_pressed->x2 - s_pressed->x1 + 1;
         int v = w>0 ? (x-s_pressed->x1)*100/w : 0;
@@ -360,7 +456,9 @@ void fxtk_draw_all(void)
     fx_set_color(s_bg); fx_fill_rect(0,0,s_drv->width-1,s_drv->height-1);
     draw_widget(&s_root,0,0,s_drv->width-1,s_drv->height-1);
     fx_reset_clip();
+    if (s_ctx_open) ctx_draw_abs();
     if (s_tdbg_on) fx_draw_text_c(2,s_drv->height-20,s_tdbg_str,FX_YELLOW,FX_BLACK);
+    draw_fps();
 }
 static void redraw_region(int x1,int y1,int x2,int y2)
 { fx_set_color(s_bg); fx_fill_rect(x1,y1,x2,y2); draw_widget(&s_root,x1,y1,x2,y2); }
@@ -368,13 +466,15 @@ static void draw_canvas_only(fx_widget_t *w)
 {
     if (!(w->flags & FX_F_VISIBLE)) return;
     if (w->type==FX_W_TAB) { for (fx_widget_t *c=w->child;c;c=c->sibling) if (c->page==w->value) draw_canvas_only(c); return; }
-    if (w->type==FX_W_CANVAS && w->cb && (w->flags & FX_F_ANIM)) {
+    if (w->type==FX_W_CANVAS && w->cb && (w->flags & FX_F_ANIM && widget_in_active_page(w))) {
         if (w->flags & FX_F_BUF) { fxtk_off_begin(w); fxtk_draw_canvas(w); fx_canvas_begin(w); w->cb(w,w->ud); fx_canvas_end(); fxtk_off_end(w); }
         else { fxtk_draw_canvas(w); fx_canvas_begin(w); w->cb(w,w->ud); fx_canvas_end(); }
     }
+    if (w->type==FX_W_CANVAS)   /* C2: 内嵌子件补画到画布内容之上, 裁剪到画布 */
+        for (fx_widget_t *c=w->child;c;c=c->sibling) draw_widget(c, w->x1,w->y1,w->x2,w->y2);
     for (fx_widget_t *c=w->child;c;c=c->sibling) draw_canvas_only(c);
 }
-void fxtk_draw_canvases(void) { if (!s_drv) return; draw_canvas_only(&s_root); fxtk_draw_flush_all(); }
+void fxtk_draw_canvases(void) { if (!s_drv) return; draw_canvas_only(&s_root); draw_fps(); fxtk_draw_flush_all(); }
 
 /* ================= 系统 API ================= */
 void fx_init(const fx_driver_t *drv)
@@ -402,7 +502,7 @@ void fx_poll(void)
                 }
                 int vis=(t->type==FX_W_TEXTEDIT)?(t->y2-t->y1-10):(t->y2-t->y1);
                 int maxs=t->content_h-vis; if (maxs<0) maxs=0;
-                t->scroll_y-=(int16_t)(dy*24);
+                t->scroll_y-=(int16_t)dy;
                 if (t->scroll_y<0)t->scroll_y=0; if (t->scroll_y>maxs)t->scroll_y=(int16_t)maxs;
                 fx_repaint_rect(t->x1,t->y1,t->x2,t->y2);
             }
@@ -411,7 +511,7 @@ void fx_poll(void)
     if (s_drv->touch_read) {
         int x=0,y=0,p=0;
         if (s_drv->touch_read(&x,&y,&p)) {
-            if (p) { s_last_tx=x; s_last_ty=y; }
+            s_last_tx=x; s_last_ty=y;   /* 悬停(未按)也更新坐标 */
             if (p && !s_touch_prev) fx_touch_press(x,y);
             else if (p && s_touch_prev) fx_touch_move(x,y);
             else if (!p && s_touch_prev) fx_touch_release(s_last_tx,s_last_ty);
@@ -419,24 +519,32 @@ void fx_poll(void)
             if (s_tdbg_on) snprintf(s_tdbg_str,sizeof(s_tdbg_str),"T:%3d,%3d %s",x,y,p?"DOWN":"up  ");
         }
     }
+    if(!s_ctxpop){ s_ctxpop=fx_canvas_new(pixel("-2000,-2000","-1900,-1900"),color(FX_WHITE)); if(s_ctxpop){ fx_set_cb(s_ctxpop,ctx_draw,0); s_ctxpop->pos_mode=FX_POS_FIXED; s_ctxpop->page=-1; fx_set_visible(s_ctxpop,0); } }
+    { int rx,ry; if(fxtk_right_click(&rx,&ry)){ fx_widget_t *hw=hit_test(&s_root,rx,ry); if(hw&&hw->type==FX_W_TEXTEDIT){ s_ctx_te=hw; s_ctx_open=1; s_ctx_hl=-1; int mw=64,mh=5*24; if(rx+mw>fx_width())rx=fx_width()-mw; if(ry+mh>fx_height())ry=fx_height()-mh; if(rx<0)rx=0; if(ry<0)ry=0; fx_widget_set_rect(s_ctxpop,rx,ry,rx+mw,ry+mh); fx_set_visible(s_ctxpop,0); } else { fx_set_visible(s_ctxpop,0); s_ctx_open=0; } fx_repaint(); } }
     if (s_drv->key_read) {
         fx_keyev_t ev;
         while (s_drv->key_read(&ev)) {
             s_last_key=ev;
             if (s_focus && s_focus->type==FX_W_TEXTEDIT && ev.down && widget_in_active_page(s_focus)) {
+                int ro=(s_focus->flags&FX_F_READONLY);
                 if (ev.mod && ev.utf8[0]) {
                     char c=ev.utf8[0]|32; int a,b;
                     if (c=='a') { s_focus->anchor=0; s_focus->caret=te_len(s_focus); }
+                    else if (c=='l') { if(s_focus->text_buf) s_focus->text_buf[0]=0; s_focus->caret=0; s_focus->anchor=0; }   /* Ctrl+L 清空 */
                     else if (c=='c'||c=='x') {
                         if (te_sel(s_focus,&a,&b) && s_drv->clip_set) { static char cb[4096]; int n=b-a; if(n>4095)n=4095; memcpy(cb,s_focus->text_buf+a,(size_t)n); cb[n]=0; s_drv->clip_set(cb); }
                         if (c=='x' && te_sel(s_focus,&a,&b)) te_del_range2(s_focus,a,b);
                     }
                     else if (c=='v' && s_drv->clip_get) te_insert(s_focus,s_drv->clip_get());
-                } else if (ev.utf8[0]) te_insert(s_focus,ev.utf8);
-                else if (ev.key==FX_KEY_BACKSPACE) { int a,b; if (te_sel(s_focus,&a,&b)) te_del_range2(s_focus,a,b); else te_backspace(s_focus); }
-                else if (ev.key==FX_KEY_LEFT||ev.key==FX_KEY_RIGHT) { te_move(s_focus,ev.key); s_focus->anchor=s_focus->caret; }
+                } else if (ev.utf8[0]&&!ro) te_insert(s_focus,ev.utf8);
+                else if (ev.key==FX_KEY_RETURN&&!ro) te_insert(s_focus,"\n");   /* 换行 */
+                else if (ev.key==FX_KEY_BACKSPACE&&!ro) { int a,b; if (te_sel(s_focus,&a,&b)) te_del_range2(s_focus,a,b); else te_backspace(s_focus); }
+                else if (ev.key==FX_KEY_LEFT||ev.key==FX_KEY_RIGHT) { te_move(s_focus,ev.key); if(!(ev.mod&2)) s_focus->anchor=s_focus->caret; }
+                else if (ev.key==FX_KEY_DELETE&&!ro) { int a,b; if(te_sel(s_focus,&a,&b))te_del_range2(s_focus,a,b); else te_del_range2(s_focus,s_focus->caret,te_next_off(s_focus->text_buf,s_focus->caret)); }
+                else if (ev.key==FX_KEY_UP||ev.key==FX_KEY_DOWN) { te_move_vert(s_focus, ev.key==FX_KEY_UP?-1:1); if(!(ev.mod&2)) s_focus->anchor=s_focus->caret; te_caret_scroll(s_focus); }
                 else if (ev.key==FX_KEY_HOME) { s_focus->caret=0; s_focus->anchor=0; }
                 else if (ev.key==FX_KEY_END) { s_focus->caret=te_len(s_focus); s_focus->anchor=s_focus->caret; }
+                te_caret_scroll(s_focus);
                 fx_repaint_rect(s_focus->x1,s_focus->y1,s_focus->x2,s_focus->y2);
             }
         }
@@ -450,16 +558,16 @@ fx_frame_begin(); fxtk_draw_all(); fx_frame_end(); }
 else if (s_repaint && s_dirty_n > 0) {
         s_repaint=0; fx_frame_begin();
         for (int i=0;i<s_dirty_n;i++) redraw_region(s_dirty[i][0],s_dirty[i][1],s_dirty[i][2],s_dirty[i][3]);
-        s_dirty_n=0; fx_frame_end();
+        s_dirty_n=0; if (s_ctx_open) ctx_draw_abs(); fx_frame_end();
     } else if (s_repaint) { s_repaint=0; fx_frame_begin(); fxtk_draw_all(); fx_frame_end(); }
     else if (s_autorepaint) { fx_frame_begin(); fxtk_draw_all(); fx_frame_end(); }
     else fxtk_draw_canvases();
 }
 uint16_t fx_width(void){return s_drv?s_drv->width:0;} uint16_t fx_height(void){return s_drv?s_drv->height:0;}
 void fx_set_autorepaint(int on){s_autorepaint=on;} void fx_set_touch_debug(int on){s_tdbg_on=on;}
-void fx_repaint(void){s_repaint=1;s_dirty_n=0;}
+void fx_repaint(void){s_full=1;s_repaint=1;s_dirty_n=0;}
 void fx_repaint_rect(int x1,int y1,int x2,int y2)
-{
+{ s_full=1;   /* 全量重绘, 杜绝残影 */
     if (!s_drv) return;
     if (x1<0)x1=0; if (y1<0)y1=0; if (x2>=s_drv->width)x2=s_drv->width-1; if (y2>=s_drv->height)y2=s_drv->height-1;
     if (x1>x2||y1>y2) return;
@@ -480,7 +588,7 @@ void fx_repaint_rect(int x1,int y1,int x2,int y2)
 void fx_set_bg(fx_color_t c){s_bg=c;s_root.bg=c;fx_repaint();}
 void fx_set_title(fx_widget_t *w,const char *s){ if(!w)return; strncpy(w->title,s?s:"",sizeof(w->title)-1); w->title[sizeof(w->title)-1]=0; redraw_widget_now(w); }
 void fx_set_color_w(fx_widget_t *w,fx_color_t c){ if(!w)return; w->bg=c; redraw_widget_now(w); }
-void fx_set_value(fx_widget_t *w,int v){ if(!w)return; if(v<0)v=0; if(v>100)v=100; w->value=(int16_t)v; redraw_widget_now(w); }
+void fx_set_value(fx_widget_t *w,int v){ if(!w)return; if(v<0)v=0; if(v>100)v=100; w->value=(int16_t)v; }   /* v2: 不立即重绘, 由脏区/C2统一画, 消除旧影+双画 */
 int fx_get_value(const fx_widget_t *w){return w?w->value:0;}
 void fx_set_cb(fx_widget_t *w,fx_cb_t cb,void *ud){ if(!w)return; w->cb=cb; w->ud=ud; }
 void fx_set_visible(fx_widget_t *w,int vis){ if(!w)return; if(vis)w->flags|=FX_F_VISIBLE; else w->flags&=(uint8_t)~FX_F_VISIBLE; fx_layout(); fx_repaint(); }
@@ -490,6 +598,62 @@ void fx_widget_rect(const fx_widget_t *w,int *x1,int *y1,int *x2,int *y2){ if(!w
 fx_color_t fx_get_bg(void){return s_bg;}
 
 /* ================= TEXTEDIT 内核 ================= */
+static int te_next(const char *s,int i){ unsigned char c=(unsigned char)s[i]; int l=1; if(c>=0xF0)l=4; else if(c>=0xE0)l=3; else if(c>=0xC0)l=2; i+=l; while(((unsigned char)s[i]&0xC0)==0x80)i++; return i; }
+static void te_caret_scroll(fx_widget_t *w){
+    const char *txt=w->text_buf?w->text_buf:w->title;
+    int len=(int)strlen(txt);
+    int aw=(w->x2-w->x1+1)-12, lh=22;
+    int line=0, start=0, acc=0, i2=0;
+    while(i2<len){
+        if(txt[i2]=='\n'){ if(w->caret<=i2)break; line++; i2++; start=i2; acc=0; continue; }
+        int j=te_next(txt,i2);
+        int cw=fx_text_width_n(txt+i2,j-i2);
+        if(acc+cw>aw && j>start){ if(w->caret<=i2)break; line++; start=i2; acc=0; continue; }
+        acc+=cw; i2=j;
+        if(i2>=w->caret)break;
+    }
+    int caret_y=line*lh, vis_h=w->y2-w->y1-10;
+    if(caret_y < w->scroll_y) w->scroll_y=(int16_t)caret_y;
+    if(caret_y+lh > w->scroll_y+vis_h) w->scroll_y=(int16_t)(caret_y+lh-vis_h);
+    if(w->scroll_y<0)w->scroll_y=0;
+}
+
+void fx_textedit_set_readonly(fx_widget_t *w,int ro){ if(!w)return; if(ro)w->flags|=FX_F_READONLY; else w->flags&=~FX_F_READONLY; }
+extern int fxtk_right_click(int*,int*);
+static fx_widget_t *s_ctxpop=NULL,*s_ctx_te=NULL;
+static void ctx_do(int idx){ fx_widget_t *w=s_ctx_te; if(!w)return; int a,b; int ro=(w->flags&FX_F_READONLY);
+  if(idx==0){ if(te_sel(w,&a,&b)&&s_drv->clip_set){ static char cb[4096]; int n=b-a; if(n>4095)n=4095; memcpy(cb,w->text_buf+a,(size_t)n); cb[n]=0; s_drv->clip_set(cb); } }
+  else if(idx==1){ if(!ro&&te_sel(w,&a,&b)){ if(s_drv->clip_set){ static char cb[4096]; int n=b-a; if(n>4095)n=4095; memcpy(cb,w->text_buf+a,(size_t)n); cb[n]=0; s_drv->clip_set(cb);} te_del_range2(w,a,b); } }
+  else if(idx==2){ if(!ro&&s_drv->clip_get) te_insert(w,s_drv->clip_get()); }
+  else if(idx==3){ w->anchor=0; w->caret=te_len(w); }
+  else if(idx==4){ if(!ro&&w->text_buf){ w->text_buf[0]=0; w->caret=0; w->anchor=0; } }
+  fx_set_visible(s_ctxpop,0); s_ctx_open=0; fx_repaint();
+}
+static const char *s_ctx_items[5]={"复制","剪切","粘贴","全选","清空"};
+static void ctx_draw(fx_widget_t*w,void*ud){
+  int x1,y1,x2,y2; fx_widget_rect(w,&x1,&y1,&x2,&y2); int cw=x2-x1,ch=y2-y1,rh=ch/5;
+  fx_set_color(FX_WHITE); fx_fill_rect(0,0,cw-1,ch-1);
+  fx_set_color(FX_GRAY); fx_draw_rect(0,0,cw-1,ch-1);
+  for(int i=0;i<5;i++){ if(i==s_ctx_hl){fx_set_color(FX_RGB(33,150,243));fx_fill_rect(1,1+i*rh,cw-2,1+i*rh+rh-1);}
+    fxtk_draw_text_size(14,6,3+i*rh,s_ctx_items[i], i==s_ctx_hl?FX_WHITE:FX_RGB(40,40,40), i==s_ctx_hl?FX_RGB(33,150,243):FX_WHITE); }
+}
+#define TE_ISW(b) (((unsigned char)(b))>=0x80 || ((b)>='a'&&(b)<='z')||((b)>='A'&&(b)<='Z')||((b)>='0'&&(b)<='9')||(b)=='_')
+static int te_word_start(const char*s,int i){ while(i>0&&!TE_ISW(s[i-1]))i--; while(i>0&&TE_ISW(s[i-1]))i--; return i; }
+static int te_word_end(const char*s,int i){ while(s[i]&&!TE_ISW(s[i]))i++; while(s[i]&&TE_ISW(s[i]))i++; return i; }
+static int te_para_start(const char*s,int i){ while(i>0&&s[i-1]!='\n')i--; return i; }
+static int te_para_end(const char*s,int i){ while(s[i]&&s[i]!='\n')i++; return i; }
+static void te_sel_para(fx_widget_t*w){ const char*s=w->text_buf?w->text_buf:""; int a=te_para_start(s,w->caret); w->anchor=a; w->caret=te_para_end(s,w->caret); }
+static void te_sel_word(fx_widget_t *w){ const char *s=w->text_buf?w->text_buf:""; int i=w->caret;
+  #define ISW(b) (((unsigned char)(b))>=0x80 || ((b)>='a'&&(b)<='z')||((b)>='A'&&(b)<='Z')||((b)>='0'&&(b)<='9')||(b)=='_')
+  while(i>0&&ISW(s[i-1]))i--; while(i>0&&(((unsigned char)s[i-1])>=0x80))i--;
+  int a=i; i=w->caret; while(s[i]&&ISW(s[i]))i=te_next_off(s,i);
+  w->anchor=a; w->caret=i; }
+static void te_sel_line(fx_widget_t *w){ const char *s=w->text_buf?w->text_buf:""; int len=(int)strlen(s);
+  static int st[512];static int se[512]; int aw=(w->x2-w->x1+1)-12; int nl=1;st[0]=0;se[0]=len;int acc=0,i2=0;
+  while(i2<len&&nl<511){ if(s[i2]=='\n'){se[nl-1]=i2;st[nl]=i2+1;se[nl]=len;nl++;acc=0;i2++;continue;} int j=te_next_off(s,i2);int cw=fx_text_width_n(s+i2,j-i2); if(acc+cw>aw&&j>st[nl-1]){se[nl-1]=i2;st[nl]=i2;se[nl]=len;nl++;acc=0;continue;} acc+=cw;i2=j; }
+  se[nl-1]=len; int L=0; for(int k=0;k<nl;k++) if(w->caret>=st[k])L=k;
+  w->anchor=st[L]; w->caret=se[L]; }
+
 static int te_len(fx_widget_t *w){return (int)strlen(w->text_buf?w->text_buf:"");}
 static int te_chars_n(const char *s,int n){int c=0,i=0;while(i<n&&s[i]){if(((unsigned char)s[i]&0xC0)!=0x80)c++;i++;}return c;}
 static int te_chars(fx_widget_t *w){return te_chars_n(w->text_buf?w->text_buf:"",te_len(w));}
@@ -512,6 +676,19 @@ static void te_insert(fx_widget_t *w,const char *utf8)
 }
 static void te_backspace(fx_widget_t *w){ if(w->caret<=0)return; int p=te_prev_off(w->text_buf,w->caret); te_del_range2(w,p,w->caret); }
 static void te_move(fx_widget_t *w,int key){ if(key==FX_KEY_LEFT)w->caret=te_prev_off(w->text_buf,w->caret); else w->caret=te_next_off(w->text_buf,w->caret); }
+static void te_move_vert(fx_widget_t *w,int dir){
+    const char *s=w->text_buf?w->text_buf:""; int len=(int)strlen(s);
+    static int st[512]; static int se[512];
+    int aw=(w->x2-w->x1+1)-12;
+    int nl=1;st[0]=0;se[0]=len;int acc=0,i2=0;
+    while(i2<len&&nl<511){ if(s[i2]=='\n'){se[nl-1]=i2;st[nl]=i2+1;se[nl]=len;nl++;acc=0;i2++;continue;} int j=te_next_off(s,i2);int cw=fx_text_width_n(s+i2,j-i2); if(acc+cw>aw&&j>st[nl-1]){se[nl-1]=i2;st[nl]=i2;se[nl]=len;nl++;acc=0;continue;} acc+=cw;i2=j; }
+    se[nl-1]=len;
+    int Lc=0; for(int L=0;L<nl;L++) if(w->caret>=st[L])Lc=L;
+    int col=0; { int i=st[Lc]; while(i<w->caret){i=te_next_off(s,i);col++;} }
+    int Lt=Lc+dir; if(Lt<0)Lt=0; if(Lt>=nl)Lt=nl-1;
+    int i=st[Lt]; int cc=0; while(i<se[Lt]&&cc<col){i=te_next_off(s,i);cc++;}
+    w->caret=i;
+}
 static void te_wrap(fx_widget_t *w,const char *txt,int *st,int max,int *nl)
 {
     int len=(int)strlen(txt), aw=(w->x2-w->x1+1)-12;
@@ -522,12 +699,21 @@ static void te_wrap(fx_widget_t *w,const char *txt,int *st,int max,int *nl)
 }
 static void te_caret_from_xy(fx_widget_t *w,int x,int y)
 {
-    const char *s=w->text_buf?w->text_buf:""; static int st[512]; int nl;
-    te_wrap(w,s,st,511,&nl);
-    int lh=22, ty0=w->y1+5, L=(y-ty0+w->scroll_y)/lh;
-    if (L<0)L=0; if (L>=nl)L=nl-1;
-    int rel=x-(w->x1+6), i=st[L], acc=0;
-    while (i<st[L+1]) { int j=te_next_off(s,i); int cw=fx_text_width_n(s+i,j-i); if (rel<=acc+cw/2) break; acc+=cw; i=j; }
+    const char *s=w->text_buf?w->text_buf:""; int len=(int)strlen(s);
+    static int st[512]; static int se[512];
+    int aw=(w->x2-w->x1+1)-12, lh=22;
+    int nl=1; st[0]=0; se[0]=len; int acc=0,i2=0;
+    while(i2<len&&nl<511){
+        if(s[i2]=='\n'){se[nl-1]=i2;st[nl]=i2+1;se[nl]=len;nl++;acc=0;i2++;continue;}
+        int j=te_next_off(s,i2); int cw=fx_text_width_n(s+i2,j-i2);
+        if(acc+cw>aw&&j>st[nl-1]){se[nl-1]=i2;st[nl]=i2;se[nl]=len;nl++;acc=0;continue;}
+        acc+=cw;i2=j;
+    }
+    se[nl-1]=len;
+    int ty0=w->y1+5, L=(y-ty0+w->scroll_y)/lh;
+    if(L<0)L=0; if(L>=nl)L=nl-1;
+    int rel=x-(w->x1+6), i=st[L]; acc=0;
+    while(i<se[L]){ int j=te_next_off(s,i); int cw=fx_text_width_n(s+i,j-i); if(rel<=acc+cw/2)break; acc+=cw;i=j; }
     w->caret=i;
 }
 static void scroll_drag_to(fx_widget_t *w,int y)
@@ -541,6 +727,7 @@ static void scroll_drag_to(fx_widget_t *w,int y)
     if (sc!=w->scroll_y) { w->scroll_y=(int16_t)sc; fx_repaint_rect(w->x1,w->y1,w->x2,w->y2); }
 }
 const char *fx_textedit_get(fx_widget_t *w){return (w&&w->text_buf)?w->text_buf:(w?w->title:"");}
+void fx_textedit_clear(fx_widget_t *w){ if(!w)return; if(w->text_buf)w->text_buf[0]=0; w->caret=0;w->anchor=0; fx_repaint_rect(w->x1,w->y1,w->x2,w->y2); }
 
 /* ================= 桌面扩展 API ================= */
 void fx_set_focus(fx_widget_t *w){ s_focus=w; if (w) fx_repaint_rect(w->x1,w->y1,w->x2,w->y2); }

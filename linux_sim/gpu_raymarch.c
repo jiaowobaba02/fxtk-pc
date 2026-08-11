@@ -7,6 +7,7 @@
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
 #include <GLES2/gl2.h>
+#include <X11/Xlib.h>
 #include <pthread.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -120,11 +121,11 @@ static int init_gl_on(EGLDisplay d)
     EGLint ca[] = { EGL_SURFACE_TYPE, EGL_PBUFFER_BIT,
                     EGL_RENDERABLE_TYPE, EGL_OPENGL_ES2_BIT, EGL_NONE };
     EGLConfig cfg; EGLint n = 0;
-    if (!eglChooseConfig(d, ca, &cfg, 1, &n) || n < 1) return 0;
+    if (!eglChooseConfig(d, ca, &cfg, 1, &n) || n < 1) { printf("[gpu] chooseConfig fail n=%d\n", n); return 0; }
     EGLint xa[] = { EGL_CONTEXT_CLIENT_VERSION, 2, EGL_NONE };
     EGLContext c = eglCreateContext(d, cfg, EGL_NO_CONTEXT, xa);
-    if (c == EGL_NO_CONTEXT) return 0;
-    if (!eglMakeCurrent(d, EGL_NO_SURFACE, EGL_NO_SURFACE, c)) return 0;
+    if (c == EGL_NO_CONTEXT) { printf("[gpu] createContext fail\n"); return 0; }
+    if (!eglMakeCurrent(d, EGL_NO_SURFACE, EGL_NO_SURFACE, c)) { printf("[gpu] makeCurrent(surfaceless) fail\n"); return 0; }
     const char *r = (const char *)glGetString(GL_RENDERER);
     if (!r) return 0;
     if (strstr(r, "llvmpipe") || strstr(r, "softpipe") ||
@@ -169,13 +170,27 @@ static int gl_setup(void)
                 if (dd == EGL_NO_DISPLAY) continue;
                 if (!eglInitialize(dd, NULL, NULL)) continue;
                 if (init_gl_on(dd)) return 1;
+                printf("[gpu] dev%d init_gl_on failed\n", i);
                 eglTerminate(dd);
             }
         }
     } else {
         printf("[gpu] no eglQueryDevicesEXT, try default display\n");
     }
-    /* 2) 回退默认显示 (X11 平台, 依赖 XInitThreads 保险) */
+    /* 2) 显式 X11 EGL (与 SDL 同源硬件链路) */
+    {
+        Display *xd = XOpenDisplay(NULL);
+        if (xd) {
+            EGLDisplay dx = eglGetDisplay((EGLNativeDisplayType)xd);
+            printf("[gpu] X11 EGL display=%p\n", (void*)dx);
+            if (dx != EGL_NO_DISPLAY && eglInitialize(dx, NULL, NULL)) {
+                if (init_gl_on(dx)) return 1;
+                eglTerminate(dx);
+            }
+            XCloseDisplay(xd);
+        } else printf("[gpu] XOpenDisplay failed\n");
+    }
+    /* 3) 回退默认显示 */
     EGLDisplay d = eglGetDisplay(EGL_DEFAULT_DISPLAY);
     if (d != EGL_NO_DISPLAY && eglInitialize(d, NULL, NULL)) {
         if (init_gl_on(d)) return 1;
@@ -253,9 +268,13 @@ static void *gpu_thread(void *a)
 int gpu_raymarch_ok(void) { return g_ok == 1; }
 const char *gpu_raymarch_renderer(void) { return g_renderer; }
 
-void gpu_raymarch_render(uint16_t *px, int w, int h, float time)
+void gpu_raymarch_start(void)
 {
     if (!g_started) { g_started = 1; pthread_create(&g_th, NULL, gpu_thread, NULL); }
+}
+void gpu_raymarch_render(uint16_t *px, int w, int h, float time)
+{
+    gpu_raymarch_start();
     if (g_ok != 1) return;
     pthread_mutex_lock(&g_mtx);
     g_job.w = w; g_job.h = h; g_job.time = time; g_job.dst = px;
