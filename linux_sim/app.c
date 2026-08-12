@@ -1,3 +1,5 @@
+#include <stdlib.h>
+#include <stdlib.h>
 /**
  * app.c — fxtk 综合演示 (5 页: 波形/动效/控件/图片/3D光追)
  */
@@ -159,8 +161,8 @@ static void on_3d(fx_widget_t *w, void *ud) {
     int x1, y1, x2, y2;
     fx_widget_rect(w, &x1, &y1, &x2, &y2);
     int cw = x2 - x1 + 1, ch = y2 - y1 + 1;
-    int rw = s_oc ? cw : 320;
-    int rh = s_oc ? ch : 180;
+    int rw = s_oc ? cw : (cw > 640 ? 640 : cw);
+    int rh = s_oc ? ch : (ch > 360 ? 360 : ch);
     if (rw < 16) rw = 16; if (rh < 16) rh = 16;
     if (!s_rt || s_rt->w != rw || s_rt->h != rh) {
         if (s_rt) fx_image_free(s_rt);
@@ -173,6 +175,7 @@ static void on_3d(fx_widget_t *w, void *ud) {
     } else {
         raymarch_render(s_rt->px, rw, rh, s_rt_time, 24 + s_rqual);
     }
+    fx_set_color(FX_BLACK); fx_fill_rect(0, 0, cw - 1, ch - 1);
     fx_draw_image(s_rt, 0, 0, cw, ch);
     s_rt_time += 0.016f * (0.3f + s_rspeed * 0.06f);
 
@@ -239,6 +242,7 @@ static void build_ui(void) {
 
     /* 页5: 3D 光线步进 */
     fx_canvas_new(pixel("6,32", "444,196"), name("rt_cv"), page(4), anim(1), color(FX_BLACK), call(on_3d));
+    fx_canvas_set_buf(fx_find("rt_cv"), 0);   /* 3D 直绘, 放大不空白 */
     fx_canvas_new(pixel("6,32", "444,196"), name("pt_cv"), page(11), anim(1), color(FX_BLACK), call(on_pt));
     fx_slider_new(pixel("6,204", "300,220"), page(11), call(on_pt_slider));
     fx_label_new(pixel("306,204", "444,220"), page(11), title("拖动调粒子数(×200)"), fgcolor(FX_RGB(51, 51, 51)));
@@ -342,7 +346,7 @@ void app_init(void) {
     build_ui();
     /* v2 perf: 波形每帧全量重画, 去离屏缓冲走GPU批 */ ////fx_canvas_enable_buf(fx_find("wave_cv"));  /* v2 perf: 每帧全量重画, 走GPU批 */
     /* v2 perf: 图形同理 */ ////fx_canvas_enable_buf(fx_find("gfx_cv"));  /* v2 perf: 同上 */
-    fx_canvas_enable_buf(fx_find("rt_cv"));
+    /* fx_canvas_enable_buf(fx_find("rt_cv")); */   /* 3D 永久直绘, 大小窗口统一 */
     fx_canvas_new(pixel("0,271", "0,271"), name("fixer"), anim(1),
                   color(FX_RGB(240,240,240)), call(on_fix));
 }

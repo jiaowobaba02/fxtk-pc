@@ -227,6 +227,11 @@ fx_color_t fx_get_bg(void);
 #ifdef __cplusplus
 }
 #endif
+
+/* 核心丝滑滚动 */
+int  fx_scroll_update(fx_widget_t *w,int content_h);
+void fx_scrollbar_draw(fx_widget_t *w,int off,int content_h);
+void fx_canvas_set_buf(fx_widget_t *w,int on);
 #endif
 
 /* ---- extra: 多尺寸文字 / 列表 / 下拉 ---- */

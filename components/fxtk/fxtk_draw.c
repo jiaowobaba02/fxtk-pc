@@ -115,6 +115,7 @@ void fxtk_off_begin(fx_widget_t *cv)
     int w = cv->x2 - cv->x1 + 1;
     int h = cv->y2 - cv->y1 + 1;
     if (w <= 0 || h <= 0) return;
+    if ((int64_t)w * h > 262144) { s_offing = 0; s_offbuf_active = NULL; return; }   /* 大画布直绘, 防放大空白 */
     /* 【缩放保护】控件尺寸变化时重分配离屏缓冲，防止堆溢出 */
     if (w != cv->offw || h != cv->offh) {
         free(cv->offbuf);
@@ -136,7 +137,7 @@ void fxtk_off_begin(fx_widget_t *cv)
 
 void fxtk_off_end(fx_widget_t *cv)
 {
-    if (!cv->offbuf) return;
+    if (!s_offbuf_active) return;
     s_drv->set_window((uint16_t)cv->x1, (uint16_t)cv->y1, (uint16_t)cv->x2, (uint16_t)cv->y2);
     s_drv->push_pixels(cv->offbuf, (uint32_t)(s_offw * s_offh));
     s_offbuf_active = NULL;

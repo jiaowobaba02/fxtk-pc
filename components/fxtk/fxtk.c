@@ -756,3 +756,39 @@ void fx_set_window_title(const char *s) { if (s_drv && s_drv->set_title) s_drv->
 static int s_grid_lines = 0;
 void fx_set_grid_lines(int on) { s_grid_lines = on; fx_repaint(); }
 int fxtk_grid_lines_on(void) { return s_grid_lines; }
+
+/* ---- 核心丝滑滚动: 像素级+惯性, 应用层一行调用 ---- */
+int fx_scroll_update(fx_widget_t *w, int content_h)
+{
+    if (!w) return 0;
+    int x1,y1,x2,y2; fx_widget_rect(w,&x1,&y1,&x2,&y2);
+    int ch=y2-y1+1; int maxs=content_h-ch; if(maxs<0)maxs=0;
+    static fx_widget_t *s_sw=0; static float s_soff=0,s_vel=0;
+    if(s_sw!=w){s_sw=w;s_soff=0;s_vel=0;}
+    int d=fx_wheel_take(w);
+    if(d) s_vel-=(float)d;   /* 轮上=内容上滚 */
+    s_soff+=s_vel; s_vel*=0.82f; if(s_vel>-0.5f&&s_vel<0.5f)s_vel=0;
+    if(s_soff<0)s_soff=0; if(s_soff>maxs)s_soff=(float)maxs;
+    return (int)s_soff;
+}
+void fx_scrollbar_draw(fx_widget_t *w,int off,int content_h)
+{
+    if(!w)return;
+    int x1,y1,x2,y2; fx_widget_rect(w,&x1,&y1,&x2,&y2);
+    int cw=x2-x1+1,ch=y2-y1+1; if(content_h<=ch)return;
+    int th=ch*ch/content_h; if(th<20)th=20;
+    int ty=(int)((long)off*(ch-th)/(content_h-ch));
+    fx_set_color(FX_GRAY); fx_fill_rect(cw-5,2,cw-2,ch-2);
+    fx_set_color(FX_RGB(33,150,243)); fx_fill_rect(cw-5,2+ty,cw-2,2+ty+th);
+}
+
+/* 画布离屏缓冲开关: 大画布/直绘场景关闭以避免放大合成问题 */
+void fx_canvas_set_buf(fx_widget_t *w, int on)
+{
+    if (!w || w->type != FX_W_CANVAS) return;
+    if (on) { fx_canvas_enable_buf(w); }
+    else {
+        if (w->offbuf) { free(w->offbuf); w->offbuf = 0; w->offw = w->offh = 0; }
+        w->flags &= (uint8_t)~FX_F_BUF;
+    }
+}
