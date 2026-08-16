@@ -7,7 +7,7 @@ static int s_t;
 static void on_cv(fx_widget_t *w, void *ud) {
     int x1, y1, x2, y2; fx_widget_rect(w, &x1, &y1, &x2, &y2);
     int cw = x2 - x1 + 1, ch = y2 - y1 + 1;
-    fx_set_color(0x0010); fx_fill_rect(0, 0, cw - 1, ch - 1);
+    fx_set_color(0x000083); fx_fill_rect(0, 0, cw - 1, ch - 1);
     s_t++;
     fx_draw_image_rot(s_img, cw / 2, ch / 2, s_t % 360, 120);
 }
@@ -25,5 +25,5 @@ static fx_image_t *make_img(void) {
 void app_init(void) {
     fx_set_bg(FX_RGB(240, 240, 240));
     s_img = make_img();
-    fx_canvas_new(pixel("10,10", "470,262"), anim(1), color(0x0010), call(on_cv));
+    fx_canvas_new(pixel("10,10", "470,262"), anim(1), color(0x000083), call(on_cv));
 }

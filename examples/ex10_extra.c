@@ -17,9 +17,8 @@ static void on_drop(fx_widget_t *w, void *ud)
 {
     static const int sz[3] = { 14, 18, 24 };
     int i = (int)(intptr_t)ud; if (i < 0 || i > 2) i = 1;
-    { fx_widget_t *big = fx_find("big");
-      fprintf(stderr, "[drop] i=%d size=%d big=%p\n", i, sz[i], (void*)big);
-      if (big) fx_set_fontsize(big, sz[i]); }
+    fx_widget_t *big = fx_find("big");
+    if (big) fx_set_fontsize(big, sz[i]);
 }
 
 void app_init(void)

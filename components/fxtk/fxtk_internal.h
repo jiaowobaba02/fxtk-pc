@@ -6,7 +6,7 @@
 
 #include "fxtk_image.h"
 
-#define FX_MAX_WIDGETS 1024
+#define FX_MAX_WIDGETS 4096
 #define FX_TAB_H 24
 
 #define FX_F_VISIBLE  0x01
@@ -43,7 +43,7 @@ struct fx_widget {
     fx_widget_t *parent, *child, *sibling;
     
     /* 离屏缓冲相关 (Canvas) - 修复内存泄漏核心 */
-    uint16_t *offbuf;
+    uint32_t *offbuf;
     uint16_t offw, offh;
 };
 

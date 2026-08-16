@@ -28,7 +28,7 @@ static uint32_t s_tc_clock = 0;
 static tc_entry_t *tc_lookup(TTF_Font *font, const char *s, fx_color_t fg, fx_color_t bg)
 {
     char key[256];
-    snprintf(key, sizeof(key), "%s|%04x|%04x", s, (unsigned)fg, (unsigned)bg);
+    snprintf(key, sizeof(key), "%s|%06x|%06x", s, (unsigned)fg, (unsigned)bg);
     for (int i = 0; i < TEXT_CACHE_SIZE; i++) {
         if (s_tc[i].key && s_tc[i].font == font && strcmp(s_tc[i].key, key) == 0) {
             s_tc[i].age = ++s_tc_clock;
@@ -105,9 +105,10 @@ void fx_draw_text_c(int x, int y, const char *s, fx_color_t fg, fx_color_t bg)
         return;
     }
 
-    uint8_t r_fg = ((fg >> 11) & 0x1F) << 3;
-    uint8_t g_fg = ((fg >> 5) & 0x3F) << 2;
-    uint8_t b_fg = (fg & 0x1F) << 3;
+    /* 24bit RGB 直接取通道 */
+    uint8_t r_fg = (uint8_t)((fg >> 16) & 0xFF);
+    uint8_t g_fg = (uint8_t)((fg >> 8) & 0xFF);
+    uint8_t b_fg = (uint8_t)(fg & 0xFF);
     SDL_Color c_fg = {r_fg, g_fg, b_fg, 255};
 
     SDL_Surface *surf = TTF_RenderUTF8_Blended(g_font, s, c_fg);
@@ -117,9 +118,9 @@ void fx_draw_text_c(int x, int y, const char *s, fx_color_t fg, fx_color_t bg)
     SDL_FreeSurface(surf);
     if (!fmt_surf) return;
 
-    uint8_t r_bg = ((bg >> 11) & 0x1F) << 3;
-    uint8_t g_bg = ((bg >> 5) & 0x3F) << 2;
-    uint8_t b_bg = (bg & 0x1F) << 3;
+    uint8_t r_bg = (uint8_t)((bg >> 16) & 0xFF);
+    uint8_t g_bg = (uint8_t)((bg >> 8) & 0xFF);
+    uint8_t b_bg = (uint8_t)(bg & 0xFF);
 
     uint32_t *src_px = (uint32_t *)fmt_surf->pixels;
     int w = fmt_surf->w;
@@ -149,7 +150,7 @@ void fx_draw_text_c(int x, int y, const char *s, fx_color_t fg, fx_color_t bg)
             for (int tx = 0; tx < w; tx++) {
                 uint32_t p = argb_buf[ty*w+tx];
                 uint8_t fr=(p>>16)&0xFF, fg_v=(p>>8)&0xFF, fb=p&0xFF;
-                fxtk_put_px(x+tx, y+ty, (uint16_t)(((fr>>3)<<11)|((fg_v>>2)<<5)|(fb>>3)));
+                fxtk_put_px(x+tx, y+ty, (uint32_t)((fr<<16)|(fg_v<<8)|fb));
             }
         free(argb_buf);
         return;
@@ -168,7 +169,7 @@ void fx_draw_text_c(int x, int y, const char *s, fx_color_t fg, fx_color_t bg)
     tc_entry_t *slot = tc_evict();
     if (slot) {
         char key[256];
-        snprintf(key, sizeof(key), "%s|%04x|%04x", s, (unsigned)fg, (unsigned)bg);
+        snprintf(key, sizeof(key), "%s|%06x|%06x", s, (unsigned)fg, (unsigned)bg);
         slot->font = g_font;
         slot->key = strdup(key);
         slot->w = w; slot->h = h;
@@ -206,6 +207,11 @@ void fx_draw_text_c_n(int x, int y, const char *s, int n, fx_color_t fg, fx_colo
 static struct { int size; TTF_Font *f; } s_fc[FC_N];
 static void tc_drop_font(TTF_Font *ft)
 { for(int i=0;i<TEXT_CACHE_SIZE;i++) if(s_tc[i].font==ft){ if(s_tc[i].tex)SDL_DestroyTexture(s_tc[i].tex); if(s_tc[i].key)free(s_tc[i].key); s_tc[i].tex=NULL;s_tc[i].key=NULL;s_tc[i].font=NULL;s_tc[i].age=0; } }
+void fxtk_font_set_size(int size)
+{
+    TTF_Font *f = (TTF_Font *)fxtk_font_size(size);
+    if (f) g_font = f;
+}
 void *fxtk_font_size(int size)
 {
     if (size <= 0 || !s_font_path[0]) return g_font;
@@ -218,7 +224,6 @@ void *fxtk_font_size(int size)
     int slot=-1; for (int k=0;k<FC_N;k++) if(!s_fc[k].f){slot=k;break;}
     if(slot<0){ slot=0; tc_drop_font(s_fc[0].f); TTF_CloseFont(s_fc[0].f); s_fc[0].f=NULL; s_fc[0].size=0; }
     s_fc[slot].f=f; s_fc[slot].size=size;
-    fprintf(stderr, "[fontcache] size=%d ok h=%d\n", size, TTF_FontHeight(f));
     return f;
 }
 int fxtk_text_width_size(int size, const char *t)

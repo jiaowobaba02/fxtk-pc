@@ -6,7 +6,7 @@ static int s_t = 0;
 static void on_cv(fx_widget_t *w, void *ud) {
     int x1, y1, x2, y2; fx_widget_rect(w, &x1, &y1, &x2, &y2);
     int cw = x2 - x1 + 1, ch = y2 - y1 + 1;
-    fx_set_color(0x0841); fx_fill_rect(0, 0, cw - 1, ch - 1);
+    fx_set_color(0x080808); fx_fill_rect(0, 0, cw - 1, ch - 1);
     int amp = ch / 2 - 10, prev = ch / 2;
     fx_set_color(FX_YELLOW);
     for (int x = 0; x < cw; x++) {
@@ -20,5 +20,5 @@ static void on_cv(fx_widget_t *w, void *ud) {
 }
 void app_init(void) {
     fx_set_bg(FX_RGB(240, 240, 240));
-    fx_canvas_new(pixel("10,10", "470,262"), anim(1), color(0x0841), call(on_cv));
+    fx_canvas_new(pixel("10,10", "470,262"), anim(1), color(0x080808), call(on_cv));
 }

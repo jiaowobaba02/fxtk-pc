@@ -4,6 +4,7 @@
 #include "fxtk.h"
 #include "fxtk_internal.h"
 #include <stdlib.h>
+#include <stdio.h>
 #include <string.h>
 #include <math.h>
 
@@ -14,12 +15,12 @@ static int s_ox = 0, s_oy = 0;
 static int s_framing = 0;
 
 /* 【核心修复】动态行缓冲：窗口超过 512 宽时自动扩容，不再溢出闪退 */
-static uint16_t *s_line = NULL;
+static uint32_t *s_line = NULL;
 static int s_line_cap = 0;
 static int s_line_y = -1;
 static int s_line_x0 = 0, s_line_x1 = 0;
 
-static uint16_t *s_offbuf_active = NULL;
+static uint32_t *s_offbuf_active = NULL;
 static int s_offing = 0;
 static int s_offw = 0, s_offh = 0;
 
@@ -29,7 +30,7 @@ static void line_ensure(int need)
 {
     if (need < s_line_cap) return;
     int newcap = (need + 512) & ~511;
-    uint16_t *nb = (uint16_t *)realloc(s_line, (size_t)newcap * sizeof(uint16_t));
+    uint32_t *nb = (uint32_t *)realloc(s_line, (size_t)newcap * sizeof(uint32_t));
     if (!nb) return;
     s_line = nb;
     s_line_cap = newcap;
@@ -44,7 +45,7 @@ static void flush_line(void)
     s_line_y = -1;
 }
 
-void fxtk_put_px(int x, int y, uint16_t c)
+void fxtk_put_px(int x, int y, uint32_t c)
 {
     if (x < s_clip_x1 || x > s_clip_x2 || y < s_clip_y1 || y > s_clip_y2) return;
     x += s_ox; y += s_oy;
@@ -115,11 +116,11 @@ void fxtk_off_begin(fx_widget_t *cv)
     int w = cv->x2 - cv->x1 + 1;
     int h = cv->y2 - cv->y1 + 1;
     if (w <= 0 || h <= 0) return;
-    if ((int64_t)w * h > 262144) { s_offing = 0; s_offbuf_active = NULL; return; }   /* 大画布直绘, 防放大空白 */
+    if ((int64_t)w * h > 4000000) { s_offing = 0; s_offbuf_active = NULL; return; }   /* 超大画布直绘, 防内存爆炸 */
     /* 【缩放保护】控件尺寸变化时重分配离屏缓冲，防止堆溢出 */
     if (w != cv->offw || h != cv->offh) {
         free(cv->offbuf);
-        cv->offbuf = malloc((size_t)w * (size_t)h * 2);
+        cv->offbuf = malloc((size_t)w * (size_t)h * 4);
         if (!cv->offbuf) {
             cv->offw = cv->offh = 0;
             cv->flags &= (uint8_t)~FX_F_BUF;
@@ -152,12 +153,12 @@ int fx_canvas_enable_buf(fx_widget_t *cv)
     if (cv->offbuf) return 0;
     int w = cv->x2 - cv->x1 + 1, h = cv->y2 - cv->y1 + 1;
     if (w <= 0 || h <= 0) return -1;
-    cv->offbuf = malloc((size_t)w * (size_t)h * 2);
+    cv->offbuf = malloc((size_t)w * (size_t)h * 4);
     if (!cv->offbuf) return -1;
     cv->offw = (uint16_t)w;
     cv->offh = (uint16_t)h;
-    /* v2 性能锁: 仅允许 3D/画板 等需要CPU像素操作的画布开离屏 */
-    if (cv->name && (strcmp(cv->name, "rt_cv")==0 || strcmp(cv->name, "pt_cv")==0 || strcmp(cv->name, "pad_cv")==0)) {
+    /* 性能锁: 仅允许已知需要离屏的画布开启, 防止内存膨胀 */
+    if (cv->name && (strcmp(cv->name, "rt_cv")==0 || strcmp(cv->name, "pt_cv")==0 || strcmp(cv->name, "pad_cv")==0 || strcmp(cv->name, "scroll_cv")==0)) {
         cv->flags |= FX_F_BUF;
     } else {
         cv->flags &= ~FX_F_BUF;
@@ -237,7 +238,8 @@ void fx_fill_rect(int x1, int y1, int x2, int y2)
     if (x1 < 0) x1 = 0;
     if (y1 < 0) y1 = 0;
     if (x2 >= s_drv->width) x2 = s_drv->width - 1;
-    if (y2 >= s_drv->height) y2 = s_drv->height - 1;
+    { int y2c = y2, hc = s_drv->height;
+      if (y2c >= hc) { y2 = hc - 1; } }
     if (x1 > x2 || y1 > y2) return;
     if (!s_offing && s_drv->fill_rect) {   /* v2: 帧内也走驱动几何批 */
         flush_line();
@@ -458,9 +460,9 @@ fx_image_t *fx_image_create(int w, int h)
     if (w <= 0 || h <= 0) return NULL;
     fx_image_t *img = (fx_image_t *)malloc(sizeof(fx_image_t));
     if (!img) return NULL;
-    img->px = (uint16_t *)malloc((size_t)w * h * 2);
+    img->px = (uint32_t *)malloc((size_t)w * h * 4);
     if (!img->px) { free(img); return NULL; }
-    memset(img->px, 0, (size_t)w * h * 2);
+    memset(img->px, 0, (size_t)w * h * 4);
     img->w = (int16_t)w; img->h = (int16_t)h;
     return img;
 }
@@ -474,9 +476,10 @@ void fx_image_set_px(fx_image_t *img, int x, int y, fx_color_t c)
     if (!img || x < 0 || y < 0 || x >= img->w || y >= img->h) return;
     img->px[y * img->w + x] = c;
 }
-static uint16_t img_darken(uint16_t c)
+static uint32_t img_darken(uint32_t c)
 {
-    return (uint16_t)((((c >> 11) & 31) / 2 << 11) | (((c >> 5) & 63) / 2 << 5) | ((c & 31) / 2));
+    uint32_t r = (c >> 16) & 0xFF, g = (c >> 8) & 0xFF, b = c & 0xFF;
+    return (r / 2) << 16 | (g / 2) << 8 | (b / 2);
 }
 void fx_draw_image_ex(fx_image_t *img, int x, int y, int dw, int dh, int dark)
 {
@@ -491,11 +494,11 @@ void fx_draw_image_ex(fx_image_t *img, int x, int y, int dw, int dh, int dark)
     for (int j = 0; j < dh; j++) {
         int sy = (int)((int64_t)j * img->h / dh);
         if (sy >= img->h) sy = img->h - 1;
-        const uint16_t *row = &img->px[sy * img->w];
+        const uint32_t *row = &img->px[sy * img->w];
         for (int i = 0; i < dw; i++) {
             int sx = (int)((int64_t)i * img->w / dw);
             if (sx >= img->w) sx = img->w - 1;
-            uint16_t c = row[sx];
+            uint32_t c = row[sx];
             fxtk_put_px(x + i, y + j, dark ? img_darken(c) : c);
         }
     }
@@ -524,3 +527,5 @@ int fxtk_image_rot_gpu(const fx_image_t *img,int cx,int cy,int dw,int dh,double 
     if(s_drv->set_clip_rect) s_drv->set_clip_rect(0,0,32767,32767);
     return 1;
 }
+
+void fxtk_dbg_get_off(int*a,int*b){ *a=s_ox; *b=s_oy; }

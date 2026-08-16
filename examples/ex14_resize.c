@@ -1,5 +1,7 @@
 /** ex14_resize — 窗口拖拽布局跟随, 无残影 */
 #include "fxtk.h"
+#include <stdio.h>
+#include <math.h>
 static void on_info(fx_widget_t*w,void*ud){
     int x1,y1,x2,y2; fx_widget_rect(w,&x1,&y1,&x2,&y2);
     int cw=x2-x1+1,ch=y2-y1+1;

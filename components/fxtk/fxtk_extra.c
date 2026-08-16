@@ -14,8 +14,8 @@ typedef struct {
     fx_widget_t *pop, *owner;
 } ex_slot_t;
 static fx_color_t ex_darken(fx_color_t c)
-{   int r=(c>>11)&31, g=(c>>5)&63, b=c&31;
-    return (fx_color_t)(((r*3/4)<<11)|((g*3/4)<<5)|(b*3/4)); }
+{   int r=(c>>16)&0xFF, g=(c>>8)&0xFF, b=c&0xFF;
+    return (fx_color_t)(((r*3/4)<<16)|((g*3/4)<<8)|(b*3/4)); }
 static ex_slot_t s_ex[8];
 static ex_slot_t *ex_get(fx_widget_t *w){ for(int i=0;i<8;i++) if(s_ex[i].w==w) return &s_ex[i]; return 0; }
 static ex_slot_t *ex_new(fx_widget_t *w){ for(int i=0;i<8;i++) if(!s_ex[i].w){ memset(&s_ex[i],0,sizeof(ex_slot_t)); s_ex[i].w=w; s_ex[i].row_h=22; s_ex[i].sel=-1; return &s_ex[i]; } return 0; }

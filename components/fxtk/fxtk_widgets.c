@@ -10,17 +10,16 @@
 void fxtk_apply_fit(fx_widget_t *w);
 static fx_color_t darken(fx_color_t c)
 {
-    return (fx_color_t)((((c >> 11) & 31) / 2 << 11) |
-                        (((c >> 5) & 63) / 2 << 5) |
-                        ((c & 31) / 2));
+    uint32_t r = (c >> 16) & 0xFF, g = (c >> 8) & 0xFF, b = c & 0xFF;
+    return (fx_color_t)((r / 2) << 16 | (g / 2) << 8 | (b / 2));
 }
 
 static fx_color_t btn_mix(fx_color_t a, fx_color_t b, int t)
 {   /* t: 0~256, b 的占比 */
-    int ar=(a>>11)&31, ag=(a>>5)&63, ab=a&31;
-    int br=(b>>11)&31, bg=(b>>5)&63, bb=b&31;
+    int ar=(a>>16)&255, ag=(a>>8)&255, ab=a&255;
+    int br=(b>>16)&255, bg=(b>>8)&255, bb=b&255;
     int r=(ar*(256-t)+br*t+128)>>8, g=(ag*(256-t)+bg*t+128)>>8, bl=(ab*(256-t)+bb*t+128)>>8;
-    return (fx_color_t)((r<<11)|(g<<5)|bl);
+    return (fx_color_t)((r<<16)|(g<<8)|bl);
 }
 void fxtk_draw_button(fx_widget_t *w)
 {
@@ -57,8 +56,6 @@ void fxtk_draw_button(fx_widget_t *w)
 
 void fxtk_draw_label(fx_widget_t *w)
 {
-    static int dbg = 0;
-    if (w->lines == 24 && dbg < 2) { fprintf(stderr, "[label] draw fs=%d\n", (int)w->lines); dbg++; }
     /* line(n)=字号(缺省18), row(0/1/2)=左/中/右, 垂直自动居中 */
     if (!w->title[0]) return;
     int fs = w->lines > 0 ? w->lines : 0;
@@ -95,7 +92,12 @@ void fxtk_draw_canvas(fx_widget_t *w)
 {
     fxtk_apply_fit(w);   /* 铺底前强制收拢, 杜绝二次变大 */
     fx_set_color(w->bg);
-    fx_fill_rect(w->x1, w->y1, w->x2, w->y2);
+    /* 离屏模式下用本地坐标(0,0)-(offw-1,offh-1); 正常模式用屏幕坐标 */
+    if (w->offbuf && (w->flags & FX_F_BUF)) {
+        fx_fill_rect(0, 0, w->offw - 1, w->offh - 1);
+    } else {
+        fx_fill_rect(w->x1, w->y1, w->x2, w->y2);
+    }
     if (w->border > 0) {
         fx_set_color(darken(w->bg));
         fx_draw_rect(w->x1, w->y1, w->x2, w->y2);
@@ -181,9 +183,17 @@ void fxtk_draw_tab(fx_widget_t *w)
         int tx1 = w->x1 + i * tw;
         int tx2 = (i == n - 1) ? w->x2 : tx1 + tw - 1;
         int sel = (i == w->value);
-        fx_color_t bg = sel ? 0x5D7C : darken(w->bg);
+        /* 立体感: 选中=凸起(亮底+顶高光+底明线), 未选中=下凹(深底+顶暗线) */
+        fx_color_t bg = sel ? btn_mix(w->bg, FX_WHITE, 24) : darken(w->bg);
         fx_set_color(bg);
         fx_fill_rect(tx1, w->y1, tx2, w->y1 + FX_TAB_H - 1);
+        fx_set_color(sel ? btn_mix(bg, FX_WHITE, 90) : darken(bg));
+        fx_draw_hline(tx1, tx2, w->y1 + (sel ? 1 : 0));                    /* 顶高光/暗边 */
+        fx_set_color(sel ? btn_mix(bg, FX_WHITE, 40) : darken(bg));
+        fx_draw_hline(tx1, tx2, w->y1 + FX_TAB_H - 1);                     /* 底明线(凸起感) */
+        fx_set_color(sel ? btn_mix(bg, FX_WHITE, 60) : darken(bg));
+        fx_draw_vline(tx1, w->y1, w->y1 + FX_TAB_H - 1);                   /* 左缘 */
+        fx_draw_vline(tx2, w->y1, w->y1 + FX_TAB_H - 1);                   /* 右缘 */
         const char *comma = strchr(p, ',');
         char seg[96];
         int len = comma ? (int)(comma - p) : (int)strlen(p);
@@ -192,11 +202,14 @@ void fxtk_draw_tab(fx_widget_t *w)
         seg[len] = 0;
         int sw = fx_text_width(seg);
         fx_draw_text_c(tx1 + (tw - sw) / 2, w->y1 + (FX_TAB_H - 16) / 2,
-                       seg, sel ? FX_WHITE : FX_LGRAY, bg);
+                       seg, sel ? FX_RGB(40, 40, 40) : FX_LGRAY, bg);   /* 选中页签深字, 亮底可读 */
         p = comma ? comma + 1 : p + strlen(p);
     }
+    /* 页签与内容区之间: 深阴影线 + 1px 高光, 增强分层 */
     fx_set_color(darken(w->bg));
     fx_draw_hline(w->x1, w->x2, w->y1 + FX_TAB_H);
+    fx_set_color(btn_mix(w->bg, FX_WHITE, 60));
+    fx_draw_hline(w->x1, w->x2, w->y1 + FX_TAB_H + 1);
 }
 
 /* ---------- 图片控件 (交互: 按压缩暗 + 缩放) ---------- */
@@ -228,6 +241,7 @@ static int te_nx(const char *s, int off)
 }
 void fxtk_draw_textedit(fx_widget_t *w)
 {
+    fxtk_font_set_size(w->lines > 0 ? w->lines : 18);   /* 固定字号: 文字/光标宽度用同一字体 */
     int focused = (fx_get_focus() == w);
     fx_color_t bg = (w->bg != FX_BLACK) ? w->bg : FX_WHITE;
     fx_color_t fg = (w->fg == FX_WHITE) ? FX_BLACK : w->fg;
@@ -286,10 +300,11 @@ void fxtk_draw_textedit(fx_widget_t *w)
     if (focused && (fx_focus_blink() || b > a)) {
         int Lc = 0;
         for (int L = 0; L < nl; L++) if (w->caret >= st[L]) Lc = L;
-        int cx = tx + fx_text_width_n(txt + st[Lc], w->caret - st[Lc]);
+        int cxn = fx_text_width_n(txt + st[Lc], w->caret - st[Lc]);
+        int cx = tx + cxn;
         int cy = ty0 + Lc * lh;
         fx_set_color(fg);
-        fx_draw_vline(cx, cy - 1, cy + 16);
+        fx_fill_rect(cx, cy - 1, cx + 1, cy + 20);   /* 2px 光标: 与文字完整高度对齐(含descender), 右缘对齐字符边界 */
     }
 /* TE-SCROLLBAR */
 if (total_h > vis_h) {

@@ -9,7 +9,7 @@
 #define FX_A_IMAGE 40          /* 新属性: 图片资源指针 */
 
 typedef struct fx_image {
-    uint16_t *px;              /* RGB565 像素 */
+    uint32_t *px;              /* 24bit RGB (0xRRGGBB) 像素 */
     int16_t w, h;
 } fx_image_t;
 

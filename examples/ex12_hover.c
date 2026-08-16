@@ -1,5 +1,7 @@
 /** ex12_hover — fx_touch_state 悬停实时坐标 + 悬停高亮 */
 #include "fxtk.h"
+#include "fxtk_desktop.h"
+#include <stdio.h>
 static void on_cv(fx_widget_t*w,void*ud){
     int x1,y1,x2,y2; fx_widget_rect(w,&x1,&y1,&x2,&y2);
     int cw=x2-x1+1,ch=y2-y1+1;

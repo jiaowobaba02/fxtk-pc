@@ -11,20 +11,21 @@
 extern "C" {
 #endif
 
-typedef uint16_t fx_color_t;
+/* 颜色: 24bit RGB (0xRRGGBB), 与主流标准一致 */
+typedef uint32_t fx_color_t;
 
 #define FX_RGB(r, g, b) \
-    ((fx_color_t)((((r) & 0xF8) << 8) | (((g) & 0xFC) << 3) | ((b) >> 3)))
-#define FX_RED    0xF800
-#define FX_GREEN  0x07E0
-#define FX_BLUE   0x001F
-#define FX_WHITE  0xFFFF
-#define FX_BLACK  0x0000
-#define FX_YELLOW 0xFFE0
-#define FX_CYAN   0x07FF
-#define FX_MAGENTA 0xF81F
-#define FX_GRAY   0x8430
-#define FX_LGRAY  0xC618
+    ((fx_color_t)((((r) & 0xFF) << 16) | (((g) & 0xFF) << 8) | ((b) & 0xFF)))
+#define FX_RED    0xFF0000
+#define FX_GREEN  0x00FF00
+#define FX_BLUE   0x0000FF
+#define FX_WHITE  0xFFFFFF
+#define FX_BLACK  0x000000
+#define FX_YELLOW 0xFFFF00
+#define FX_CYAN   0x00FFFF
+#define FX_MAGENTA 0xFF00FF
+#define FX_GRAY   0x848484
+#define FX_LGRAY  0xC8C8C8
 
 struct fx_widget;
 typedef struct fx_widget fx_widget_t;
@@ -187,25 +188,25 @@ enum { FX_KEY_BACKSPACE = 8, FX_KEY_RETURN = 13, FX_KEY_ESCAPE = 27,
        FX_KEY_UP = 5, FX_KEY_DOWN = 6, FX_KEY_DELETE = 127 };
 
 typedef struct {
-    uint16_t width, height;
+    uint32_t width, height;
     int  (*init)(void);
     void (*set_window)(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1);
-    void (*push_pixels)(const uint16_t *px, uint32_t n);
+    void (*push_pixels)(const uint32_t *px, uint32_t n);
     void (*hold_begin)(void);
     void (*hold_end)(void);
-    void (*fill_rect)(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1, uint16_t color);
+    void (*fill_rect)(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1, uint32_t color);
     int  (*touch_read)(int *x, int *y, int *pressed);
     int  (*key_read)(fx_keyev_t *ev);
     void (*clip_set)(const char *s);          /* 可选: 系统剪贴板 */
     const char *(*clip_get)(void);
     void (*set_title)(const char *s);      /* 可选: 窗口标题 */
     int  (*wheel_read)(int *x, int *y, int *dy);  /* 可选: 滚轮 */        /* 可选: 键盘事件 */
-    void (*blit_img)(const uint16_t *px,int w,int h,int dx,int dy,int dw,int dh,int dark); /* GPU缩放blit */
+    void (*blit_img)(const uint32_t *px,int w,int h,int dx,int dy,int dw,int dh,int dark); /* GPU缩放blit */
     void (*set_clip_rect)(int x1,int y1,int x2,int y2);
-    void (*fill_tri)(int x1,int y1,int x2,int y2,int x3,int y3,uint16_t c); /* GPU三角 */
-    void (*draw_line)(int x1,int y1,int x2,int y2,uint16_t c); /* GPU折线 */
+    void (*fill_tri)(int x1,int y1,int x2,int y2,int x3,int y3,uint32_t c); /* GPU三角 */
+    void (*draw_line)(int x1,int y1,int x2,int y2,uint32_t c); /* GPU折线 */
     void (*blit_tex)(void *tex,int sx,int sy,int sw,int sh,int dx,int dy); /* GPU文字blit(src+dst) */
-    void (*blit_img_rot)(const uint16_t *px,int w,int h,int cx,int cy,int dw,int dh,double ang); /* GPU旋转blit */
+    void (*blit_img_rot)(const uint32_t *px,int w,int h,int cx,int cy,int dw,int dh,double ang); /* GPU旋转blit */
 } fx_driver_t;
 
 void fx_init(const fx_driver_t *drv);
@@ -218,10 +219,10 @@ void fx_set_bg(fx_color_t c);
 void fx_set_window_title(const char *s);
 void fx_set_grid_lines(int on);   /* 调试: 显示网格线 */
 int fxtk_grid_lines_on(void);  /* 运行时改窗口标题 */
-
-extern fx_driver_t fx_st6201_driver;
-int  fx_gt911_init(void);
-int  fx_gt911_read(int *x, int *y, int *pressed);
+void fxtk_set_fps_debug(int on); /* 左下角 FPS 调试信息 (默认关) */
+int fxtk_widget_count(void);   /* 当前存活的控件总数 */
+int fxtk_fps(void);            /* 驱动刷新率 (帧/秒) */
+void fx_widget_fix(fx_widget_t *w, int x1, int y1);  /* 固定坐标模式: 防布局重算, 记录基准 */
 fx_color_t fx_get_bg(void);
 
 #ifdef __cplusplus
@@ -236,6 +237,8 @@ void fx_canvas_set_buf(fx_widget_t *w,int on);
 
 /* ---- extra: 多尺寸文字 / 列表 / 下拉 ---- */
 void *fxtk_font_size(int size);
+void fxtk_font_set_size(int size);   /* 固定当前字号, 避免遗留 g_font 影响文字/光标宽度 */
+
 int  fxtk_text_width_size(int size, const char *t);
 void fxtk_draw_text_size(int size, int x, int y, const char *t, fx_color_t fg, fx_color_t bg);
 fx_widget_t *fx_list_new(const char *r1, const char *r2);

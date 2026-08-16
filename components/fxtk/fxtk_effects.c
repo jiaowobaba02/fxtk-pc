@@ -4,7 +4,7 @@
 #include "fxtk_effects.h"
 #include <math.h>
 
-void fxtk_put_px(int x, int y, uint16_t c);   /* fxtk_draw.c */
+void fxtk_put_px(int x, int y, uint32_t c);   /* fxtk_draw.c */
 
 /* 旋转贴图: 对包围盒内每个屏幕像素, 反向旋转回源图采样 (最近邻) */
 void fx_draw_image_rot(fx_image_t *img, int cx, int cy, int angle_deg, int scale_pct)
@@ -50,9 +50,9 @@ void fx_image_flip_x(fx_image_t *img)
     if (!img) return;
     for (int y = 0; y < img->h; y++)
         for (int x = 0; x < img->w / 2; x++) {
-            uint16_t *a = &img->px[y * img->w + x];
-            uint16_t *b = &img->px[y * img->w + img->w - 1 - x];
-            uint16_t t = *a; *a = *b; *b = t;
+            uint32_t *a = &img->px[y * img->w + x];
+            uint32_t *b = &img->px[y * img->w + img->w - 1 - x];
+            uint32_t t = *a; *a = *b; *b = t;
         }
 }
 
@@ -61,9 +61,9 @@ void fx_image_flip_y(fx_image_t *img)
     if (!img) return;
     for (int y = 0; y < img->h / 2; y++)
         for (int x = 0; x < img->w; x++) {
-            uint16_t *a = &img->px[y * img->w + x];
-            uint16_t *b = &img->px[(img->h - 1 - y) * img->w + x];
-            uint16_t t = *a; *a = *b; *b = t;
+            uint32_t *a = &img->px[y * img->w + x];
+            uint32_t *b = &img->px[(img->h - 1 - y) * img->w + x];
+            uint32_t t = *a; *a = *b; *b = t;
         }
 }
 
@@ -71,10 +71,10 @@ void fx_image_grayscale(fx_image_t *img)
 {
     if (!img) return;
     for (int i = 0; i < img->w * img->h; i++) {
-        uint16_t c = img->px[i];
-        int r = (c >> 11) & 31, g = (c >> 5) & 63, b = c & 31;
-        int y8 = (((r << 3) * 77) + ((g << 2) * 150) + ((b << 3) * 29)) >> 8;
-        img->px[i] = (uint16_t)(((y8 >> 3) << 11) | (((y8 >> 2) & 63) << 5) | (y8 >> 3));
+        uint32_t c = img->px[i];
+        int r = (c >> 16) & 0xFF, g = (c >> 8) & 0xFF, b = c & 0xFF;
+        int y8 = (r * 77 + g * 150 + b * 29) >> 8;
+        img->px[i] = (uint32_t)((y8 << 16) | (y8 << 8) | y8);
     }
 }
 
@@ -82,14 +82,14 @@ void fx_image_tint(fx_image_t *img, fx_color_t color, int amount)
 {
     if (!img || amount <= 0) return;
     if (amount > 255) amount = 255;
-    int tr = (color >> 11) & 31, tg = (color >> 5) & 63, tb = color & 31;
+    int tr = (color >> 16) & 0xFF, tg = (color >> 8) & 0xFF, tb = color & 0xFF;
     for (int i = 0; i < img->w * img->h; i++) {
-        uint16_t c = img->px[i];
-        int r = (c >> 11) & 31, g = (c >> 5) & 63, b = c & 31;
+        uint32_t c = img->px[i];
+        int r = (c >> 16) & 0xFF, g = (c >> 8) & 0xFF, b = c & 0xFF;
         r = (r * (255 - amount) + tr * amount) / 255;
         g = (g * (255 - amount) + tg * amount) / 255;
         b = (b * (255 - amount) + tb * amount) / 255;
-        img->px[i] = (uint16_t)((r << 11) | (g << 5) | b);
+        img->px[i] = (uint32_t)((r << 16) | (g << 8) | b);
     }
 }
 
@@ -97,13 +97,13 @@ void fx_image_brightness(fx_image_t *img, int delta)
 {
     if (!img) return;
     for (int i = 0; i < img->w * img->h; i++) {
-        uint16_t c = img->px[i];
-        int r = ((c >> 11) & 31) + (delta >> 3);
-        int g = ((c >> 5) & 63) + (delta >> 2);
-        int b = (c & 31) + (delta >> 3);
-        if (r < 0) r = 0; if (r > 31) r = 31;
-        if (g < 0) g = 0; if (g > 63) g = 63;
-        if (b < 0) b = 0; if (b > 31) b = 31;
-        img->px[i] = (uint16_t)((r << 11) | (g << 5) | b);
+        uint32_t c = img->px[i];
+        int r = ((c >> 16) & 0xFF) + delta;
+        int g = ((c >> 8) & 0xFF) + delta;
+        int b = (c & 0xFF) + delta;
+        if (r < 0) r = 0; if (r > 255) r = 255;
+        if (g < 0) g = 0; if (g > 255) g = 255;
+        if (b < 0) b = 0; if (b > 255) b = 255;
+        img->px[i] = (uint32_t)((r << 16) | (g << 8) | b);
     }
 }

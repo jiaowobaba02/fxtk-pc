@@ -1,5 +1,6 @@
 /** ex15_textcache — 多字号混排 + 字号滑杆, 验证字体缓存淘汰不闪断 */
 #include "fxtk.h"
+#include <stdio.h>
 static fx_widget_t *s_big;
 static void on_sz(fx_widget_t*w,void*ud){ fx_set_fontsize(s_big, 10+fx_get_value(w)/4); }
 static void on_cv(fx_widget_t*w,void*ud){
